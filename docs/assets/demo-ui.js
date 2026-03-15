@@ -511,8 +511,11 @@ export function initReceiverDemo({
   initDemoShell();
 
   const video = byId("video");
+  const openScanStageBtn = byId("openScanStageBtn");
   const startBtn = byId("startBtn");
   const stopBtn = byId("stopBtn");
+  const scanDialog = byId("scanDialog");
+  const scanCloseBtn = byId("scanCloseBtn");
   const download = byId("download");
   let downloadUrl = null;
 
@@ -523,7 +526,20 @@ export function initReceiverDemo({
     autoStopOnComplete: true
   });
 
+  function openScanDialog() {
+    openDialog(scanDialog);
+  }
+
+  function closeScanDialog() {
+    receiver.stop();
+    receiver.stopCamera();
+    closeDialog(scanDialog);
+  }
+
   function syncButtons(scanning) {
+    if (openScanStageBtn) {
+      openScanStageBtn.disabled = false;
+    }
     if (startBtn) {
       startBtn.disabled = Boolean(scanning);
     }
@@ -544,6 +560,7 @@ export function initReceiverDemo({
   }
 
   receiver.on("camera-start", () => {
+    openScanDialog();
     setText("stageMeta", "Camera is live. Aim at the sender screen and keep the full QR area visible.");
     syncButtons(true);
   });
@@ -592,6 +609,9 @@ export function initReceiverDemo({
         : "Keep scanning until every chunk is collected.",
       legacy: `receiving: ${payload.receivedChunks}/${payload.totalChunks}`
     });
+    if (payload.ratio >= 1) {
+      setText("stageMeta", "Transfer complete. You can save the reconstructed file from the main page.");
+    }
   });
 
   receiver.on("complete", (result) => {
@@ -625,6 +645,7 @@ export function initReceiverDemo({
       detail: "Download the reconstructed file from the button below.",
       legacy: "status: complete"
     });
+    setText("stageMeta", "Transfer complete. The main page now shows the download action.");
     syncButtons(false);
   });
 
@@ -636,6 +657,10 @@ export function initReceiverDemo({
       legacy: `error: ${error?.message || String(error)}`
     });
     syncButtons(false);
+  });
+
+  openScanStageBtn?.addEventListener("click", () => {
+    openScanDialog();
   });
 
   startBtn?.addEventListener("click", async () => {
@@ -665,8 +690,7 @@ export function initReceiverDemo({
   });
 
   stopBtn?.addEventListener("click", () => {
-    receiver.stop();
-    receiver.stopCamera();
+    closeScanDialog();
     setStatus({
       tone: "idle",
       title: "Receiver stopped",
@@ -676,10 +700,25 @@ export function initReceiverDemo({
     syncButtons(false);
   });
 
+  scanCloseBtn?.addEventListener("click", () => {
+    closeScanDialog();
+  });
+
+  scanDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeScanDialog();
+  });
+
+  scanDialog?.addEventListener("click", (event) => {
+    if (event.target === scanDialog) {
+      closeScanDialog();
+    }
+  });
+
   hideDownload();
   setText("manifestName", "Waiting for sender manifest");
   setText("manifestMeta", "The file details will appear here once the first manifest is read.");
-  setText("stageMeta", "Grant camera access, then point at the sender screen from a comfortable distance.");
+  setText("stageMeta", "Open the scan stage, then start the camera when the sender is ready.");
   const progressText = byId("progressText");
   if (progressText) {
     progressText.textContent = "0%  |  No chunks received yet";

@@ -22,6 +22,7 @@ The current demo UI is designed to be:
 - preset-first, with low-level transfer tuning hidden by default
 - mobile-friendly and responsive
 - easy to operate during live demos
+- QR sender and receiver stages shown in focused modals
 - suitable for GitHub Pages hosting
 
 GitHub Pages source files live in [`docs/`](./docs).
@@ -153,8 +154,9 @@ npm run build
 The repository includes [`deploy-pages.yml`](./.github/workflows/deploy-pages.yml).
 
 - pushes to `main` deploy GitHub Pages automatically
-- the workflow now builds with Node.js `24`
-- JavaScript-based GitHub Actions are forced onto Node `24` as well
+- the workflow builds with Node.js `24`
+- the built site is published to the `gh-pages` branch
+- this avoids the deprecated Pages artifact actions that were emitting Node 20 warnings
 
 To build the Pages artifact locally:
 

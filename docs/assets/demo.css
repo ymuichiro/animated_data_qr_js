@@ -329,6 +329,13 @@ button {
   align-items: start;
 }
 
+.receiver-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  align-items: start;
+}
+
 .control-label,
 .metric-label,
 .section-label {
@@ -845,13 +852,30 @@ a[aria-disabled="true"] {
   padding: clamp(16px, 2vw, 22px);
 }
 
+.video-card--modal {
+  padding: clamp(16px, 2vw, 22px);
+}
+
 .canvas-frame--modal {
   min-height: min(72vh, 760px);
   padding: 20px;
 }
 
+.video-frame--modal {
+  min-height: min(68vh, 720px);
+  padding: 20px;
+}
+
 .canvas-frame--modal #qrCanvas {
   width: min(100%, 760px);
+}
+
+.video-frame--modal #video {
+  width: min(100%, 760px);
+}
+
+.progress-shell--modal {
+  padding: 18px;
 }
 
 @keyframes rise-in {
@@ -895,7 +919,8 @@ a[aria-disabled="true"] {
   .stats-grid,
   .route-grid,
   .metric-grid,
-  .sender-grid {
+  .sender-grid,
+  .receiver-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
