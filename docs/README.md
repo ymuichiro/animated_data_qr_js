@@ -1,13 +1,13 @@
 # Demo Pages
 
-GitHub Pages 公開用の静的デモです。
+Static demo files for the GitHub Pages site.
 
 ## Routes
 
-- `/` : デモトップ
-- `/sender` : 送信モード
-- `/reciever` : 受信モード
-- `/receiver` : `/reciever` へのリダイレクト
+- `/` : demo home
+- `/sender` : sender mode
+- `/reciever` : receiver mode
+- `/receiver` : compatibility redirect to `/reciever`
 
 ## Local Preview
 
@@ -16,4 +16,4 @@ npm run build:pages
 node scripts/static-server.mjs --port 4173 --root site
 ```
 
-ブラウザで `http://127.0.0.1:4173/` を開いて確認してください。
+Then open `http://127.0.0.1:4173/` in the browser.

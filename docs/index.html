@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,28 +7,112 @@
     <link rel="stylesheet" href="./assets/demo.css" />
   </head>
   <body>
-    <div class="wrap">
-      <nav class="topnav">
-        <a href="./sender/">/sender</a>
-        <a href="./reciever/">/reciever</a>
-        <a href="./receiver/">/receiver</a>
-      </nav>
+    <div class="shell">
+      <header class="site-header">
+        <div class="header-left">
+          <a class="brand" href="./">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-copy">
+              <span class="brand-title">Animated Data QR</span>
+              <span class="brand-subtitle">Offline browser-to-browser transfer</span>
+            </span>
+          </a>
+        </div>
+        <div class="header-right">
+          <nav class="topnav" aria-label="Primary navigation">
+            <a class="nav-link is-active" href="./">Home</a>
+            <a class="nav-link" href="./sender/">/sender</a>
+            <a class="nav-link" href="./reciever/">/reciever</a>
+          </nav>
+          <button id="helpBtn" class="icon-button" type="button" aria-label="Open help">?</button>
+        </div>
+      </header>
 
-      <section class="panel">
-        <h1>Animated Data QR Demo</h1>
-        <p>
-          ブラウザ間オフラインファイル転送のデモページです。送信側で animated QR を表示し、
-          受信側でカメラ読み取りして復元できます。
-        </p>
-        <ol>
-          <li><code>/sender</code> を別タブまたは別端末で開く</li>
-          <li><code>/reciever</code> を開いてスキャンを開始する</li>
-          <li>受信完了後にダウンロードリンクから復元ファイルを保存する</li>
-        </ol>
-        <p class="muted">
-          Note: 公開 URL は <code>https://&lt;username&gt;.github.io/&lt;repo&gt;/</code> 形式です。
-        </p>
-      </section>
+      <main class="page-grid page-grid--split page-grid--home">
+        <section class="panel hero">
+          <span class="eyebrow">Optical transfer demo</span>
+          <h1 class="hero-title">Move files between browsers with animated QR only.</h1>
+          <p class="hero-copy">
+            This demo keeps the transfer path fully visual. The sender displays a looping QR sequence,
+            and the receiver rebuilds the file directly from camera scans without a server or network link.
+          </p>
+          <div class="badge-row" aria-label="Feature highlights">
+            <span class="badge">No server upload</span>
+            <span class="badge">No WebRTC or WebSocket</span>
+            <span class="badge">Works with mobile camera scanning</span>
+          </div>
+          <div class="route-grid">
+            <a class="link-card" href="./sender/">
+              <div>
+                <span class="section-label">Route</span>
+                <h3>/sender</h3>
+                <p>Pick a file, choose a preset, and start the QR broadcast.</p>
+              </div>
+              <span class="arrow-link" aria-hidden="true">&rarr;</span>
+            </a>
+            <a class="link-card" href="./reciever/">
+              <div>
+                <span class="section-label">Route</span>
+                <h3>/reciever</h3>
+                <p>Open the camera, scan the sender display, and download the restored file.</p>
+              </div>
+              <span class="arrow-link" aria-hidden="true">&rarr;</span>
+            </a>
+          </div>
+        </section>
+
+        <section class="panel card-stack">
+          <div class="summary-card">
+            <span class="section-label">How it works</span>
+            <ol class="route-list">
+              <li>Open <span class="mono">/sender</span> on the device that holds the file.</li>
+              <li>Open <span class="mono">/reciever</span> on another device and allow camera access.</li>
+              <li>Prepare the sender, then start the broadcast once the receiver is already scanning.</li>
+              <li>Wait for completion and download the reconstructed file on the receiver side.</li>
+            </ol>
+          </div>
+          <div class="tip-grid">
+            <div class="tip-card">
+              <h3>Best scan results</h3>
+              <p>Use full brightness on the sender, keep the QR area centered, and avoid reflections on the display.</p>
+            </div>
+            <div class="tip-card">
+              <h3>Preset-first design</h3>
+              <p>Only the preset is exposed in the demo UI. Chunk size, frame interval, parity, and density are applied automatically.</p>
+            </div>
+            <div class="tip-card">
+              <h3>Route alias</h3>
+              <p>The legacy <span class="mono">/receiver</span> route still redirects to <span class="mono">/reciever</span> for compatibility.</p>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
+
+    <dialog id="helpDialog" class="dialog" aria-labelledby="helpTitle">
+      <div class="dialog-body">
+        <div class="dialog-header">
+          <div>
+            <span class="kicker">Demo guide</span>
+            <h2 id="helpTitle" class="dialog-title">How to use this demo</h2>
+          </div>
+          <button id="helpCloseBtn" class="dialog-close" type="button" aria-label="Close help">&times;</button>
+        </div>
+        <p class="copy">
+          The goal is to keep the experience approachable. Pick a mode, follow the short steps, and let the preset handle the transfer tuning.
+        </p>
+        <ol class="help-list">
+          <li>Open <span class="mono">/sender</span> on the sending screen and choose the file you want to share.</li>
+          <li>Select the preset that matches your environment, then prepare and start the QR broadcast.</li>
+          <li>Open <span class="mono">/reciever</span> on the receiving device, grant camera access, and point it at the sender display.</li>
+          <li>When the progress reaches 100%, download the restored file from the receiver page.</li>
+        </ol>
+      </div>
+    </dialog>
+
+    <script type="module">
+      import { initDemoShell } from "./assets/demo-ui.js";
+      initDemoShell();
+    </script>
   </body>
 </html>

@@ -1,24 +1,99 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Animated QR Demo</title>
-    <style>
-      body {
-        font-family: sans-serif;
-        margin: 40px;
-      }
-      a {
-        display: block;
-        margin: 10px 0;
-        font-size: 20px;
-      }
-    </style>
+    <title>Animated Data QR Examples</title>
+    <link rel="stylesheet" href="../docs/assets/demo.css" />
   </head>
   <body>
-    <h1>Animated QR Demo</h1>
-    <a href="./sender.html">送信モード</a>
-    <a href="./receiver.html">受信モード</a>
+    <div class="shell">
+      <header class="site-header">
+        <div class="header-left">
+          <a class="brand" href="./index.html">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-copy">
+              <span class="brand-title">Animated Data QR</span>
+              <span class="brand-subtitle">Local examples</span>
+            </span>
+          </a>
+        </div>
+        <div class="header-right">
+          <nav class="topnav" aria-label="Primary navigation">
+            <a class="nav-link is-active" href="./index.html">Home</a>
+            <a class="nav-link" href="./sender.html">Sender</a>
+            <a class="nav-link" href="./receiver.html">Receiver</a>
+          </nav>
+          <button id="helpBtn" class="icon-button" type="button" aria-label="Open help">?</button>
+        </div>
+      </header>
+
+      <main class="page-grid page-grid--split page-grid--home">
+        <section class="panel hero">
+          <span class="eyebrow">Local preview</span>
+          <h1 class="hero-title">Use the same sender and receiver flow without GitHub Pages.</h1>
+          <p class="hero-copy">
+            These example pages mirror the public demo and are useful for local testing, Playwright checks, and quick browser verification while developing the library.
+          </p>
+          <div class="route-grid">
+            <a class="link-card" href="./sender.html">
+              <div>
+                <span class="section-label">Example page</span>
+                <h3>sender.html</h3>
+                <p>Prepare a transfer and display the animated QR sequence.</p>
+              </div>
+              <span class="arrow-link" aria-hidden="true">&rarr;</span>
+            </a>
+            <a class="link-card" href="./receiver.html">
+              <div>
+                <span class="section-label">Example page</span>
+                <h3>receiver.html</h3>
+                <p>Start the camera, scan the sender screen, and save the reconstructed file.</p>
+              </div>
+              <span class="arrow-link" aria-hidden="true">&rarr;</span>
+            </a>
+          </div>
+        </section>
+
+        <section class="panel card-stack">
+          <div class="summary-card">
+            <span class="section-label">Developer note</span>
+            <p class="copy">
+              The public GitHub Pages demo uses <span class="mono">/sender</span> and <span class="mono">/reciever</span>. These local examples expose the same interaction model without the route folders.
+            </p>
+          </div>
+          <div class="tip-grid">
+            <div class="tip-card">
+              <h3>Preset-only UI</h3>
+              <p>Advanced transfer parameters stay hidden so the demo remains easy to understand while still exercising the underlying library features.</p>
+            </div>
+            <div class="tip-card">
+              <h3>Testing friendly</h3>
+              <p>The HTML keeps the same core element IDs used by the existing browser automation and integration checks.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="helpDialog" class="dialog" aria-labelledby="helpTitle">
+      <div class="dialog-body">
+        <div class="dialog-header">
+          <div>
+            <span class="kicker">Local example help</span>
+            <h2 id="helpTitle" class="dialog-title">What these pages are for</h2>
+          </div>
+          <button id="helpCloseBtn" class="dialog-close" type="button" aria-label="Close help">&times;</button>
+        </div>
+        <p class="copy">
+          Use these pages when you want the same sender and receiver experience locally, without building the GitHub Pages site first.
+        </p>
+      </div>
+    </dialog>
+
+    <script type="module">
+      import { initDemoShell } from "../docs/assets/demo-ui.js";
+      initDemoShell();
+    </script>
   </body>
 </html>
