@@ -11,6 +11,7 @@ export type FrameParseResult =
       mimeType: string;
       fileName: string;
       parityBlockDataChunks: number;
+      symbolsPerFrame: number;
     }
   | {
       type: "chunk";
@@ -34,7 +35,9 @@ export interface TransferEstimate {
   fileSize: number;
   chunkByteSize: number;
   frameIntervalMs: number;
+  symbolsPerFrame: number;
   totalChunks: number;
+  totalSymbols: number;
   totalFrames: number;
   loopDurationMs: number;
   bytesPerSecond: number;
@@ -47,6 +50,7 @@ export interface CreateTransferFramesOptions {
   mimeType?: string;
   payloadEncoding?: PayloadEncoding;
   frameIntervalMs?: number;
+  symbolsPerFrame?: number;
   parityBlockDataChunks?: number;
 }
 
@@ -58,9 +62,14 @@ export interface PreparedTransfer {
   chunkByteSize: number;
   totalChunks: number;
   payloadEncoding: PayloadEncoding;
+  symbolsPerFrame: number;
   parityBlockDataChunks: number;
   frames: FrameInput[];
   qrFrames: Array<string | Array<{ data: Uint8ClampedArray; mode: "byte" }>>;
+  displayFrames: Array<{
+    symbols: FrameInput[];
+    qrSymbols: Array<string | Array<{ data: Uint8ClampedArray; mode: "byte" }>>;
+  }>;
   estimatedStats: TransferEstimate;
 }
 
@@ -69,6 +78,7 @@ export interface SenderOptions {
   frameIntervalMs?: number;
   chunkByteSize?: number;
   payloadEncoding?: PayloadEncoding;
+  symbolsPerFrame?: number;
   parityBlockDataChunks?: number;
   qrOptions?: Record<string, unknown>;
 }
@@ -78,6 +88,7 @@ export interface ReceiverOptions {
   scanIntervalMs?: number;
   autoStopOnComplete?: boolean;
   preferBarcodeDetector?: boolean;
+  maxSymbolsPerFrame?: number;
   cameraConstraints?: MediaStreamConstraints;
   scanCanvas?: HTMLCanvasElement | null;
 }
@@ -96,6 +107,7 @@ export interface TransferPreset {
   frameIntervalMs: number;
   chunkByteSize: number;
   payloadEncoding: PayloadEncoding;
+  symbolsPerFrame: number;
   parityBlockDataChunks: number;
   qrOptions: {
     errorCorrectionLevel: "L" | "M" | "Q" | "H";
@@ -106,6 +118,7 @@ export const PROTOCOL_MAGIC: string;
 export const DEFAULT_FRAME_INTERVAL_MS: number;
 export const DEFAULT_CHUNK_BYTE_SIZE: number;
 export const DEFAULT_PAYLOAD_ENCODING: PayloadEncoding;
+export const DEFAULT_SYMBOLS_PER_FRAME: number;
 export const TRANSFER_PRESETS: Record<string, TransferPreset>;
 
 export function createSessionId(): string;
@@ -117,6 +130,7 @@ export function encodeManifestFrame(input: {
   mimeType: string;
   fileName: string;
   parityBlockDataChunks?: number;
+  symbolsPerFrame?: number;
 }): string;
 export function encodeChunkFrame(input: {
   sessionId: string;
@@ -149,6 +163,7 @@ export function estimateTransferStats(input: {
   fileSize: number;
   chunkByteSize?: number;
   frameIntervalMs?: number;
+  symbolsPerFrame?: number;
   manifestFrames?: number;
   extraFrames?: number;
 }): TransferEstimate;
@@ -164,6 +179,7 @@ export class AnimatedQrSender {
   frameIntervalMs: number;
   chunkByteSize: number;
   payloadEncoding: PayloadEncoding;
+  symbolsPerFrame: number;
   parityBlockDataChunks: number;
   prepared: PreparedTransfer | null;
   frameIndex: number;
@@ -174,7 +190,7 @@ export class AnimatedQrSender {
     options?: CreateTransferFramesOptions
   ): Promise<PreparedTransfer>;
   getFrames(): FrameInput[];
-  renderFrameAt(frameIndex: number): Promise<FrameInput>;
+  renderFrameAt(frameIndex: number): Promise<FrameInput[]>;
   start(): Promise<void>;
   stop(): void;
   on(eventName: string, listener: (payload: any) => void): () => void;
@@ -186,6 +202,7 @@ export class AnimatedQrReceiver {
   video: HTMLVideoElement | null;
   scanIntervalMs: number;
   autoStopOnComplete: boolean;
+  maxSymbolsPerFrame: number;
   setVideo(videoElement: HTMLVideoElement): void;
   startCamera(constraints?: MediaStreamConstraints): Promise<MediaStream>;
   stopCamera(): void;

@@ -27,6 +27,7 @@ Pages 用ファイルは [`docs/`](./docs) にあります。
 - npm / jsDelivr / UMD / ESM で利用可能
 - 既定のフレーム切替は `250ms`
 - chunk payload は既定で `binary` エンコード
+- 1 画面に複数 QR を並べる `symbolsPerFrame` に対応
 
 ## Install
 
@@ -68,17 +69,18 @@ import {
 - `frameIntervalMs`: `250`
 - `chunkByteSize`: `220`
 - `payloadEncoding`: `binary`
+- `symbolsPerFrame`: `1`
 
 ### `TRANSFER_PRESETS`
 
 - `compatibility`: `220 bytes`, `250ms`, `EC=M`
-- `balanced`: `384 bytes`, `250ms`, `EC=M`
-- `throughput`: `512 bytes`, `250ms`, `EC=L`
-- `resilient`: `220 bytes`, `250ms`, `EC=M`, `parityBlockDataChunks=8`
+- `balanced`: `384 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`
+- `throughput`: `512 bytes`, `250ms`, `EC=L`, `symbolsPerFrame=4`
+- `resilient`: `220 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`, `parityBlockDataChunks=8`
 
-### `estimateTransferStats({ fileSize, chunkByteSize, frameIntervalMs })`
+### `estimateTransferStats({ fileSize, chunkByteSize, frameIntervalMs, symbolsPerFrame })`
 
-概算の chunk 数、1 周時間、概算 bytes/sec を返します。
+概算の chunk 数、表示フレーム数、1 周時間、概算 bytes/sec を返します。
 
 ### `new AnimatedQrReceiver(options?)`
 
@@ -105,6 +107,7 @@ import {
 5. 欠損対策として軽い parity/FEC を足し、何周も待たずに復元できるようにする
 
 このライブラリでは 2 の「binary payload」を既定値に変更しています。  
+さらに `symbolsPerFrame` を増やすと、1 回の画面更新で複数 chunk を同時に送れます。  
 さらに `parityBlockDataChunks` を設定すると、ブロックごとに XOR parity を 1 枚追加して、1 枚だけ欠けたブロックを復元できます。  
 `/sender` デモでは preset 切替と、現在の設定での「1 周時間」「概算スループット」を表示します。
 

@@ -48,6 +48,7 @@ describe("transfer flow", () => {
     expect(completed.fileName).toBe("payload.txt");
     expect(completed.mimeType).toBe("text/plain");
     expect(transfer.payloadEncoding).toBe("binary");
+    expect(transfer.symbolsPerFrame).toBe(1);
     const outputBytes = new Uint8Array(await completed.blob.arrayBuffer());
     expect(Array.from(outputBytes)).toEqual(Array.from(inputBytes));
   });
@@ -82,9 +83,30 @@ describe("transfer flow", () => {
     });
 
     expect(stats.totalChunks).toBe(4);
+    expect(stats.totalSymbols).toBe(5);
     expect(stats.totalFrames).toBe(5);
     expect(stats.loopDurationMs).toBe(1250);
     expect(stats.bytesPerSecond).toBeCloseTo(819.2, 1);
+  });
+
+  it("reduces loop frame count when multiple QR symbols are shown per frame", async () => {
+    const inputBytes = new Uint8Array(1024);
+    const transfer = await createTransferFrames(
+      createFakeFile("multi.bin", "application/octet-stream", inputBytes),
+      {
+        chunkByteSize: 128,
+        frameIntervalMs: 250,
+        symbolsPerFrame: 4,
+        sessionId: "multi-session"
+      }
+    );
+
+    expect(transfer.totalChunks).toBe(8);
+    expect(transfer.frames.length).toBe(9);
+    expect(transfer.displayFrames.length).toBe(3);
+    expect(transfer.estimatedStats.totalSymbols).toBe(9);
+    expect(transfer.estimatedStats.totalFrames).toBe(3);
+    expect(transfer.estimatedStats.loopDurationMs).toBe(750);
   });
 
   it("recovers one missing chunk per parity block", async () => {

@@ -31,6 +31,7 @@ describe("protocol", () => {
     expect(parsed?.mimeType).toBe("application/zip");
     expect(parsed?.fileName).toBe("archive.zip");
     expect(parsed?.parityBlockDataChunks).toBe(0);
+    expect(parsed?.symbolsPerFrame).toBe(1);
   });
 
   it("encodes and parses chunk frame", () => {

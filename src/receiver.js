@@ -1,4 +1,5 @@
 import jsQR from "jsqr";
+import { getGridDimensions } from "./grid.js";
 import { concatChunks } from "./utils/chunk.js";
 import { parseFrame } from "./protocol.js";
 import { SimpleEmitter } from "./emitter.js";
@@ -8,6 +9,7 @@ function createSession(sessionId, totalChunks) {
     sessionId,
     totalChunks,
     chunkByteSize: null,
+    symbolsPerFrame: 1,
     parityBlockDataChunks: 0,
     fileSize: null,
     mimeType: "application/octet-stream",
@@ -17,6 +19,34 @@ function createSession(sessionId, totalChunks) {
     receivedChunks: 0,
     completed: false
   };
+}
+
+function createProgressPayload(session) {
+  const ratio = session.totalChunks > 0
+    ? session.receivedChunks / session.totalChunks
+    : 0;
+  return {
+    sessionId: session.sessionId,
+    receivedChunks: session.receivedChunks,
+    totalChunks: session.totalChunks,
+    ratio
+  };
+}
+
+function getFrameKey(frame) {
+  if (!frame) {
+    return "unknown";
+  }
+  if (frame.type === "manifest") {
+    return `M:${frame.sessionId}`;
+  }
+  if (frame.type === "chunk") {
+    return `C:${frame.sessionId}:${frame.chunkIndex}`;
+  }
+  if (frame.type === "parity") {
+    return `P:${frame.sessionId}:${frame.blockStartChunkIndex}`;
+  }
+  return "unknown";
 }
 
 function recoverParityChunk(session, blockStartChunkIndex) {
@@ -68,18 +98,6 @@ function recoverParityChunk(session, blockStartChunkIndex) {
   };
 }
 
-function createProgressPayload(session) {
-  const ratio = session.totalChunks > 0
-    ? session.receivedChunks / session.totalChunks
-    : 0;
-  return {
-    sessionId: session.sessionId,
-    receivedChunks: session.receivedChunks,
-    totalChunks: session.totalChunks,
-    ratio
-  };
-}
-
 export function createDownloadLink(result, anchorElement = null) {
   const url = URL.createObjectURL(result.blob);
   if (!anchorElement && typeof document === "undefined") {
@@ -98,6 +116,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     this.scanIntervalMs = options.scanIntervalMs ?? 120;
     this.autoStopOnComplete = options.autoStopOnComplete ?? true;
     this.preferBarcodeDetector = options.preferBarcodeDetector ?? true;
+    this.maxSymbolsPerFrame = options.maxSymbolsPerFrame ?? 4;
     this.cameraConstraints = options.cameraConstraints ?? {
       audio: false,
       video: {
@@ -227,6 +246,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         }
       }
       session.chunkByteSize = frame.chunkByteSize;
+      session.symbolsPerFrame = frame.symbolsPerFrame ?? 1;
       session.parityBlockDataChunks = frame.parityBlockDataChunks ?? 0;
       session.fileSize = frame.fileSize;
       session.mimeType = frame.mimeType;
@@ -237,6 +257,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         mimeType: session.mimeType,
         fileSize: session.fileSize,
         chunkByteSize: session.chunkByteSize,
+        symbolsPerFrame: session.symbolsPerFrame,
         parityBlockDataChunks: session.parityBlockDataChunks,
         totalChunks: session.totalChunks
       });
@@ -261,13 +282,13 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       if (!session.parityChunks.has(frame.blockStartChunkIndex)) {
         session.parityChunks.set(frame.blockStartChunkIndex, frame.dataBytes);
       }
-      const recovered = recoverParityChunk(session, frame.blockStartChunkIndex);
-      if (recovered && session.chunks[recovered.chunkIndex] === null) {
-        session.chunks[recovered.chunkIndex] = recovered.chunkBytes;
+      const recoveredFromParity = recoverParityChunk(session, frame.blockStartChunkIndex);
+      if (recoveredFromParity && session.chunks[recoveredFromParity.chunkIndex] === null) {
+        session.chunks[recoveredFromParity.chunkIndex] = recoveredFromParity.chunkBytes;
         session.receivedChunks += 1;
         this.emit("recover", {
           sessionId: session.sessionId,
-          chunkIndex: recovered.chunkIndex,
+          chunkIndex: recoveredFromParity.chunkIndex,
           receivedChunks: session.receivedChunks,
           totalChunks: session.totalChunks
         });
@@ -276,13 +297,13 @@ export class AnimatedQrReceiver extends SimpleEmitter {
 
     if (frame.type === "chunk" && session.parityBlockDataChunks > 0) {
       const blockStartChunkIndex = frame.chunkIndex - (frame.chunkIndex % session.parityBlockDataChunks);
-      const recovered = recoverParityChunk(session, blockStartChunkIndex);
-      if (recovered && session.chunks[recovered.chunkIndex] === null) {
-        session.chunks[recovered.chunkIndex] = recovered.chunkBytes;
+      const recoveredFromChunk = recoverParityChunk(session, blockStartChunkIndex);
+      if (recoveredFromChunk && session.chunks[recoveredFromChunk.chunkIndex] === null) {
+        session.chunks[recoveredFromChunk.chunkIndex] = recoveredFromChunk.chunkBytes;
         session.receivedChunks += 1;
         this.emit("recover", {
           sessionId: session.sessionId,
-          chunkIndex: recovered.chunkIndex,
+          chunkIndex: recoveredFromChunk.chunkIndex,
           receivedChunks: session.receivedChunks,
           totalChunks: session.totalChunks
         });
@@ -336,8 +357,8 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     }
 
     try {
-      const frameInput = await this.#readFrameInput();
-      if (frameInput) {
+      const frameInputs = await this.#readFrameInputs();
+      for (const frameInput of frameInputs) {
         this.ingestFrame(frameInput);
       }
     } catch (error) {
@@ -351,18 +372,50 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     }
   }
 
-  async #readFrameInput() {
-    if (!this.video || this.video.readyState < 2) {
-      return null;
+  #getCandidateSymbolCounts() {
+    const counts = new Set([1]);
+    for (const session of this.sessions.values()) {
+      if (session.symbolsPerFrame > 1) {
+        counts.add(session.symbolsPerFrame);
+      }
     }
+    for (const count of [2, 4]) {
+      if (count <= this.maxSymbolsPerFrame) {
+        counts.add(count);
+      }
+    }
+    return Array.from(counts).sort((left, right) => left - right);
+  }
+
+  #dedupeFrameInputs(inputs) {
+    const unique = new Map();
+    for (const input of inputs) {
+      const parsed = parseFrame(input);
+      if (!parsed) {
+        continue;
+      }
+      unique.set(getFrameKey(parsed), input);
+    }
+    return Array.from(unique.values());
+  }
+
+  async #readFrameInputs() {
+    if (!this.video || this.video.readyState < 2) {
+      return [];
+    }
+
+    const detectedInputs = [];
 
     if (this.detector) {
       try {
         const codes = await this.detector.detect(this.video);
-        if (codes.length > 0 && codes[0].rawValue) {
-          const parsed = parseFrame(codes[0].rawValue);
+        for (const code of codes) {
+          if (!code.rawValue) {
+            continue;
+          }
+          const parsed = parseFrame(code.rawValue);
           if (parsed) {
-            return codes[0].rawValue;
+            detectedInputs.push(code.rawValue);
           }
         }
       } catch {
@@ -370,14 +423,18 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       }
     }
 
+    if (detectedInputs.length > 0) {
+      return this.#dedupeFrameInputs(detectedInputs);
+    }
+
     if (!this.scanCanvas || !this.scanContext) {
-      return null;
+      return [];
     }
 
     const width = this.video.videoWidth;
     const height = this.video.videoHeight;
     if (!width || !height) {
-      return null;
+      return [];
     }
 
     if (this.scanCanvas.width !== width) {
@@ -388,19 +445,44 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     }
 
     this.scanContext.drawImage(this.video, 0, 0, width, height);
-    const imageData = this.scanContext.getImageData(0, 0, width, height);
-    const result = jsQR(imageData.data, width, height, {
+
+    const inputs = [];
+    const fullFrame = this.scanContext.getImageData(0, 0, width, height);
+    const fullResult = jsQR(fullFrame.data, width, height, {
       inversionAttempts: "dontInvert"
     });
-
-    if (!result) {
-      return null;
+    if (fullResult) {
+      inputs.push(fullResult.binaryData ? new Uint8Array(fullResult.binaryData) : fullResult.data);
     }
 
-    if (result.binaryData) {
-      return new Uint8Array(result.binaryData);
+    const gap = 12;
+    for (const symbolCount of this.#getCandidateSymbolCounts()) {
+      if (symbolCount === 1) {
+        continue;
+      }
+      const { columns, rows } = getGridDimensions(symbolCount);
+      const cellWidth = Math.floor((width - (gap * (columns + 1))) / columns);
+      const cellHeight = Math.floor((height - (gap * (rows + 1))) / rows);
+      for (let index = 0; index < symbolCount; index += 1) {
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const x = Math.max(0, gap + (column * (cellWidth + gap)) - 4);
+        const y = Math.max(0, gap + (row * (cellHeight + gap)) - 4);
+        const sampleWidth = Math.min(width - x, cellWidth + 8);
+        const sampleHeight = Math.min(height - y, cellHeight + 8);
+        if (sampleWidth <= 0 || sampleHeight <= 0) {
+          continue;
+        }
+        const cellFrame = this.scanContext.getImageData(x, y, sampleWidth, sampleHeight);
+        const cellResult = jsQR(cellFrame.data, sampleWidth, sampleHeight, {
+          inversionAttempts: "dontInvert"
+        });
+        if (cellResult) {
+          inputs.push(cellResult.binaryData ? new Uint8Array(cellResult.binaryData) : cellResult.data);
+        }
+      }
     }
 
-    return result.data ?? null;
+    return this.#dedupeFrameInputs(inputs);
   }
 }

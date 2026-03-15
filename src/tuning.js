@@ -1,12 +1,14 @@
 export const DEFAULT_FRAME_INTERVAL_MS = 250;
 export const DEFAULT_CHUNK_BYTE_SIZE = 220;
 export const DEFAULT_PAYLOAD_ENCODING = "binary";
+export const DEFAULT_SYMBOLS_PER_FRAME = 1;
 
 export const TRANSFER_PRESETS = Object.freeze({
   compatibility: Object.freeze({
     frameIntervalMs: 250,
     chunkByteSize: 220,
     payloadEncoding: "binary",
+    symbolsPerFrame: 1,
     parityBlockDataChunks: 0,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
@@ -16,6 +18,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     frameIntervalMs: 250,
     chunkByteSize: 384,
     payloadEncoding: "binary",
+    symbolsPerFrame: 2,
     parityBlockDataChunks: 0,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
@@ -25,6 +28,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     frameIntervalMs: 250,
     chunkByteSize: 512,
     payloadEncoding: "binary",
+    symbolsPerFrame: 4,
     parityBlockDataChunks: 0,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "L"
@@ -34,6 +38,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     frameIntervalMs: 250,
     chunkByteSize: 220,
     payloadEncoding: "binary",
+    symbolsPerFrame: 2,
     parityBlockDataChunks: 8,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
@@ -47,6 +52,7 @@ export function resolveTransferPreset(name = "compatibility") {
     frameIntervalMs: preset.frameIntervalMs,
     chunkByteSize: preset.chunkByteSize,
     payloadEncoding: preset.payloadEncoding,
+    symbolsPerFrame: preset.symbolsPerFrame,
     parityBlockDataChunks: preset.parityBlockDataChunks,
     qrOptions: {
       ...preset.qrOptions
@@ -58,6 +64,7 @@ export function estimateTransferStats({
   fileSize,
   chunkByteSize = DEFAULT_CHUNK_BYTE_SIZE,
   frameIntervalMs = DEFAULT_FRAME_INTERVAL_MS,
+  symbolsPerFrame = DEFAULT_SYMBOLS_PER_FRAME,
   manifestFrames = 1,
   extraFrames = 0
 }) {
@@ -70,9 +77,13 @@ export function estimateTransferStats({
   if (!Number.isFinite(frameIntervalMs) || frameIntervalMs <= 0) {
     throw new TypeError("frameIntervalMs must be a number > 0");
   }
+  if (!Number.isInteger(symbolsPerFrame) || symbolsPerFrame <= 0) {
+    throw new TypeError("symbolsPerFrame must be an integer > 0");
+  }
 
   const totalChunks = Math.max(1, Math.ceil(fileSize / chunkByteSize));
-  const totalFrames = totalChunks + manifestFrames + extraFrames;
+  const totalSymbols = totalChunks + manifestFrames + extraFrames;
+  const totalFrames = Math.ceil(totalSymbols / symbolsPerFrame);
   const loopDurationMs = totalFrames * frameIntervalMs;
   const bytesPerSecond = fileSize === 0
     ? 0
@@ -82,7 +93,9 @@ export function estimateTransferStats({
     fileSize,
     chunkByteSize,
     frameIntervalMs,
+    symbolsPerFrame,
     totalChunks,
+    totalSymbols,
     totalFrames,
     loopDurationMs,
     bytesPerSecond

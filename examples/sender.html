@@ -57,6 +57,7 @@
         </label>
         <label>Chunk bytes: <input id="chunkSizeInput" type="number" value="220" min="32" max="1024" /></label>
         <label>Frame ms: <input id="frameMsInput" type="number" value="250" min="60" max="2000" /></label>
+        <label>Symbols/frame: <input id="symbolsPerFrameInput" type="number" value="1" min="1" max="4" /></label>
         <label>Parity block: <input id="parityBlockInput" type="number" value="0" min="0" max="64" /></label>
         <label>
           EC:
@@ -88,6 +89,7 @@
       const presetSelect = document.getElementById("presetSelect");
       const chunkSizeInput = document.getElementById("chunkSizeInput");
       const frameMsInput = document.getElementById("frameMsInput");
+      const symbolsPerFrameInput = document.getElementById("symbolsPerFrameInput");
       const parityBlockInput = document.getElementById("parityBlockInput");
       const ecLevelSelect = document.getElementById("ecLevelSelect");
       const prepareBtn = document.getElementById("prepareBtn");
@@ -113,13 +115,14 @@
       }
 
       function createPreparedSummary(payload) {
-        return `prepared: ${payload.fileName}, chunks=${payload.totalChunks}, parity=${payload.parityBlockDataChunks || 0}, 1 loop=${formatDuration(payload.estimatedStats.loopDurationMs)}, ~${Math.round(payload.estimatedStats.bytesPerSecond)} B/s`;
+        return `prepared: ${payload.fileName}, chunks=${payload.totalChunks}, symbols/frame=${payload.symbolsPerFrame}, parity=${payload.parityBlockDataChunks || 0}, 1 loop=${formatDuration(payload.estimatedStats.loopDurationMs)}, ~${Math.round(payload.estimatedStats.bytesPerSecond)} B/s`;
       }
 
       function applyPreset(name) {
         const preset = resolveTransferPreset(name);
         chunkSizeInput.value = String(preset.chunkByteSize);
         frameMsInput.value = String(preset.frameIntervalMs);
+        symbolsPerFrameInput.value = String(preset.symbolsPerFrame || 1);
         parityBlockInput.value = String(preset.parityBlockDataChunks || 0);
         ecLevelSelect.value = preset.qrOptions.errorCorrectionLevel;
       }
@@ -129,7 +132,8 @@
           sender = new AnimatedQrSender({
             canvas,
             chunkByteSize: Number(chunkSizeInput.value),
-            frameIntervalMs: Number(frameMsInput.value)
+            frameIntervalMs: Number(frameMsInput.value),
+            symbolsPerFrame: Number(symbolsPerFrameInput.value)
           });
           sender.on("prepared", (payload) => {
             status.textContent = createPreparedSummary(payload);
@@ -146,6 +150,7 @@
         }
         sender.chunkByteSize = Number(chunkSizeInput.value);
         sender.frameIntervalMs = Number(frameMsInput.value);
+        sender.symbolsPerFrame = Number(symbolsPerFrameInput.value);
         sender.parityBlockDataChunks = Number(parityBlockInput.value);
         sender.qrOptions.errorCorrectionLevel = ecLevelSelect.value;
       }
@@ -165,6 +170,7 @@
         ensureSender();
         await sender.prepare(file, {
           chunkByteSize: Number(chunkSizeInput.value),
+          symbolsPerFrame: Number(symbolsPerFrameInput.value),
           parityBlockDataChunks: Number(parityBlockInput.value)
         });
       });

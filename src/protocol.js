@@ -113,6 +113,9 @@ function parseTextFrame(frameText) {
     const parityBlockDataChunks = parts.length >= 9
       ? parsePositiveInt(parts[8]) ?? 0
       : 0;
+    const symbolsPerFrame = parts.length >= 10
+      ? parsePositiveInt(parts[9]) ?? 1
+      : 1;
     try {
       mimeType = decodeText(parts[6]) || "application/octet-stream";
       fileName = decodeText(parts[7]) || "transfer.bin";
@@ -128,7 +131,8 @@ function parseTextFrame(frameText) {
       fileSize,
       mimeType,
       fileName,
-      parityBlockDataChunks
+      parityBlockDataChunks,
+      symbolsPerFrame
     };
   }
 
@@ -264,7 +268,8 @@ export function encodeManifestFrame({
   fileSize,
   mimeType,
   fileName,
-  parityBlockDataChunks = 0
+  parityBlockDataChunks = 0,
+  symbolsPerFrame = 1
 }) {
   if (!sessionId) {
     throw new Error("sessionId is required");
@@ -278,7 +283,8 @@ export function encodeManifestFrame({
     String(fileSize),
     encodeText(mimeType || "application/octet-stream"),
     encodeText(fileName || "transfer.bin"),
-    String(parityBlockDataChunks)
+    String(parityBlockDataChunks),
+    String(symbolsPerFrame)
   ];
   return parts.join(FRAME_SEPARATOR);
 }

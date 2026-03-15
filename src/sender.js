@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import { bytesToBase64Url } from "./utils/base64.js";
 import { splitBytes } from "./utils/chunk.js";
+import { getGridDimensions, groupIntoBatches } from "./grid.js";
 import {
   createSessionId,
   encodeManifestFrame,
@@ -14,10 +15,11 @@ import {
   DEFAULT_CHUNK_BYTE_SIZE,
   DEFAULT_FRAME_INTERVAL_MS,
   DEFAULT_PAYLOAD_ENCODING,
+  DEFAULT_SYMBOLS_PER_FRAME,
   estimateTransferStats
 } from "./tuning.js";
 
-function toQrFrame(frame) {
+function toQrSymbol(frame) {
   if (typeof frame === "string") {
     return frame;
   }
@@ -26,6 +28,45 @@ function toQrFrame(frame) {
     data: new Uint8ClampedArray(frame),
     mode: "byte"
   }];
+}
+
+function getCanvasDisplaySize(canvas, symbolCount) {
+  const width = Math.max(320, canvas.clientWidth || canvas.width || 640);
+  const { columns, rows } = getGridDimensions(symbolCount);
+  const size = Math.max(320, Math.round(width * (rows / columns)));
+  return {
+    width,
+    height: size
+  };
+}
+
+async function renderQrGrid(canvas, qrSymbols, qrOptions) {
+  const { columns, rows } = getGridDimensions(qrSymbols.length);
+  const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
+  const context = canvas.getContext("2d");
+  const gap = 12;
+  const cellWidth = Math.floor((width - (gap * (columns + 1))) / columns);
+  const cellHeight = Math.floor((height - (gap * (rows + 1))) / rows);
+  const drawSize = Math.max(64, Math.min(cellWidth, cellHeight));
+
+  canvas.width = width;
+  canvas.height = height;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+
+  for (let index = 0; index < qrSymbols.length; index += 1) {
+    const tempCanvas = document.createElement("canvas");
+    await QRCode.toCanvas(tempCanvas, qrSymbols[index], {
+      ...qrOptions,
+      width: drawSize
+    });
+
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = gap + (column * (cellWidth + gap)) + Math.max(0, Math.floor((cellWidth - drawSize) / 2));
+    const y = gap + (row * (cellHeight + gap)) + Math.max(0, Math.floor((cellHeight - drawSize) / 2));
+    context.drawImage(tempCanvas, x, y, drawSize, drawSize);
+  }
 }
 
 async function blobLikeToBytes(fileLike) {
@@ -107,6 +148,15 @@ function createParityFrame({
   });
 }
 
+function createDisplayFrames(frames, qrSymbols, symbolsPerFrame) {
+  const groupedFrames = groupIntoBatches(frames, symbolsPerFrame);
+  const groupedQrSymbols = groupIntoBatches(qrSymbols, symbolsPerFrame);
+  return groupedFrames.map((symbols, index) => ({
+    symbols,
+    qrSymbols: groupedQrSymbols[index]
+  }));
+}
+
 export async function createTransferFrames(fileLike, options = {}) {
   const chunkByteSize = options.chunkByteSize ?? DEFAULT_CHUNK_BYTE_SIZE;
   if (!Number.isInteger(chunkByteSize) || chunkByteSize <= 0) {
@@ -117,6 +167,12 @@ export async function createTransferFrames(fileLike, options = {}) {
   if (payloadEncoding !== "binary" && payloadEncoding !== "base64") {
     throw new TypeError("payloadEncoding must be either 'binary' or 'base64'");
   }
+
+  const symbolsPerFrame = options.symbolsPerFrame ?? DEFAULT_SYMBOLS_PER_FRAME;
+  if (!Number.isInteger(symbolsPerFrame) || symbolsPerFrame <= 0) {
+    throw new TypeError("symbolsPerFrame must be an integer > 0");
+  }
+
   const parityBlockDataChunks = options.parityBlockDataChunks ?? 0;
   if (!Number.isInteger(parityBlockDataChunks) || parityBlockDataChunks < 0) {
     throw new TypeError("parityBlockDataChunks must be an integer >= 0");
@@ -136,13 +192,14 @@ export async function createTransferFrames(fileLike, options = {}) {
     fileSize: bytes.length,
     mimeType,
     fileName,
-    parityBlockDataChunks
+    parityBlockDataChunks,
+    symbolsPerFrame
   });
 
-  const chunkFrames = [];
+  const symbolFrames = [];
   for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
     const chunkBytes = chunks[chunkIndex];
-    chunkFrames.push(createChunkFrame({
+    symbolFrames.push(createChunkFrame({
       payloadEncoding,
       sessionId,
       chunkIndex,
@@ -154,10 +211,10 @@ export async function createTransferFrames(fileLike, options = {}) {
       parityBlockDataChunks > 0
       && ((chunkIndex + 1) % parityBlockDataChunks === 0 || chunkIndex === chunks.length - 1)
     ) {
-      const blockStartChunkIndex = chunkIndex - ((chunkIndex % parityBlockDataChunks));
+      const blockStartChunkIndex = chunkIndex - (chunkIndex % parityBlockDataChunks);
       const blockChunks = chunks.slice(blockStartChunkIndex, chunkIndex + 1);
       const parityBytes = createParityChunk(blockChunks, chunkByteSize);
-      chunkFrames.push(createParityFrame({
+      symbolFrames.push(createParityFrame({
         payloadEncoding,
         sessionId,
         blockStartChunkIndex,
@@ -167,12 +224,14 @@ export async function createTransferFrames(fileLike, options = {}) {
     }
   }
 
-  const frames = [manifestFrame, ...chunkFrames];
-  const qrFrames = frames.map((frame) => toQrFrame(frame));
+  const frames = [manifestFrame, ...symbolFrames];
+  const qrSymbols = frames.map((frame) => toQrSymbol(frame));
+  const displayFrames = createDisplayFrames(frames, qrSymbols, symbolsPerFrame);
   const estimatedStats = estimateTransferStats({
     fileSize: bytes.length,
     chunkByteSize,
     frameIntervalMs: options.frameIntervalMs ?? DEFAULT_FRAME_INTERVAL_MS,
+    symbolsPerFrame,
     extraFrames: parityBlockDataChunks > 0
       ? Math.ceil(totalChunks / parityBlockDataChunks)
       : 0
@@ -186,9 +245,11 @@ export async function createTransferFrames(fileLike, options = {}) {
     chunkByteSize,
     totalChunks,
     payloadEncoding,
+    symbolsPerFrame,
     parityBlockDataChunks,
     frames,
-    qrFrames,
+    qrFrames: qrSymbols,
+    displayFrames,
     estimatedStats
   };
 }
@@ -200,6 +261,7 @@ export class AnimatedQrSender extends SimpleEmitter {
     this.frameIntervalMs = options.frameIntervalMs ?? DEFAULT_FRAME_INTERVAL_MS;
     this.chunkByteSize = options.chunkByteSize ?? DEFAULT_CHUNK_BYTE_SIZE;
     this.payloadEncoding = options.payloadEncoding ?? DEFAULT_PAYLOAD_ENCODING;
+    this.symbolsPerFrame = options.symbolsPerFrame ?? DEFAULT_SYMBOLS_PER_FRAME;
     this.parityBlockDataChunks = options.parityBlockDataChunks ?? 0;
     this.qrOptions = {
       errorCorrectionLevel: "M",
@@ -225,6 +287,7 @@ export class AnimatedQrSender extends SimpleEmitter {
       fileName: options.fileName,
       mimeType: options.mimeType,
       payloadEncoding: options.payloadEncoding ?? this.payloadEncoding,
+      symbolsPerFrame: options.symbolsPerFrame ?? this.symbolsPerFrame,
       parityBlockDataChunks: options.parityBlockDataChunks ?? this.parityBlockDataChunks,
       frameIntervalMs: options.frameIntervalMs ?? this.frameIntervalMs
     });
@@ -240,24 +303,36 @@ export class AnimatedQrSender extends SimpleEmitter {
   }
 
   async renderFrameAt(frameIndex) {
-    if (!this.prepared || this.prepared.frames.length === 0) {
+    if (!this.prepared || this.prepared.displayFrames.length === 0) {
       throw new Error("No transfer is prepared. Call prepare() first.");
     }
     if (!this.canvas) {
       throw new Error("No canvas configured. Pass { canvas } or call setCanvas().");
     }
 
-    const length = this.prepared.frames.length;
+    const length = this.prepared.displayFrames.length;
     const safeIndex = ((frameIndex % length) + length) % length;
-    const qrFrame = this.prepared.qrFrames[safeIndex];
-    const frame = this.prepared.frames[safeIndex];
-    await QRCode.toCanvas(this.canvas, qrFrame, this.qrOptions);
+    const displayFrame = this.prepared.displayFrames[safeIndex];
+
+    if (displayFrame.qrSymbols.length === 1) {
+      const { width, height } = getCanvasDisplaySize(this.canvas, 1);
+      this.canvas.width = width;
+      this.canvas.height = height;
+      await QRCode.toCanvas(this.canvas, displayFrame.qrSymbols[0], {
+        ...this.qrOptions,
+        width: Math.min(width, height)
+      });
+    } else {
+      await renderQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+    }
+
     this.emit("frame", {
       frameIndex: safeIndex,
-      frame,
+      symbols: displayFrame.symbols,
+      symbolCount: displayFrame.symbols.length,
       sessionId: this.prepared.sessionId
     });
-    return frame;
+    return displayFrame.symbols;
   }
 
   async start() {
@@ -271,7 +346,7 @@ export class AnimatedQrSender extends SimpleEmitter {
     this.running = true;
     this.emit("start", {
       sessionId: this.prepared.sessionId,
-      frameCount: this.prepared.frames.length
+      frameCount: this.prepared.displayFrames.length
     });
     await this.#tick();
   }
@@ -292,7 +367,7 @@ export class AnimatedQrSender extends SimpleEmitter {
 
     try {
       await this.renderFrameAt(this.frameIndex);
-      this.frameIndex = (this.frameIndex + 1) % this.prepared.frames.length;
+      this.frameIndex = (this.frameIndex + 1) % this.prepared.displayFrames.length;
       this.timer = setTimeout(() => {
         void this.#tick();
       }, this.frameIntervalMs);
