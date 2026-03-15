@@ -7,6 +7,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     frameIntervalMs: 250,
     chunkByteSize: 220,
     payloadEncoding: "binary",
+    parityBlockDataChunks: 0,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
     })
@@ -15,6 +16,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     frameIntervalMs: 250,
     chunkByteSize: 384,
     payloadEncoding: "binary",
+    parityBlockDataChunks: 0,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
     })
@@ -23,8 +25,18 @@ export const TRANSFER_PRESETS = Object.freeze({
     frameIntervalMs: 250,
     chunkByteSize: 512,
     payloadEncoding: "binary",
+    parityBlockDataChunks: 0,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "L"
+    })
+  }),
+  resilient: Object.freeze({
+    frameIntervalMs: 250,
+    chunkByteSize: 220,
+    payloadEncoding: "binary",
+    parityBlockDataChunks: 8,
+    qrOptions: Object.freeze({
+      errorCorrectionLevel: "M"
     })
   })
 });
@@ -35,6 +47,7 @@ export function resolveTransferPreset(name = "compatibility") {
     frameIntervalMs: preset.frameIntervalMs,
     chunkByteSize: preset.chunkByteSize,
     payloadEncoding: preset.payloadEncoding,
+    parityBlockDataChunks: preset.parityBlockDataChunks,
     qrOptions: {
       ...preset.qrOptions
     }
@@ -45,7 +58,8 @@ export function estimateTransferStats({
   fileSize,
   chunkByteSize = DEFAULT_CHUNK_BYTE_SIZE,
   frameIntervalMs = DEFAULT_FRAME_INTERVAL_MS,
-  manifestFrames = 1
+  manifestFrames = 1,
+  extraFrames = 0
 }) {
   if (!Number.isFinite(fileSize) || fileSize < 0) {
     throw new TypeError("fileSize must be a number >= 0");
@@ -58,7 +72,7 @@ export function estimateTransferStats({
   }
 
   const totalChunks = Math.max(1, Math.ceil(fileSize / chunkByteSize));
-  const totalFrames = totalChunks + manifestFrames;
+  const totalFrames = totalChunks + manifestFrames + extraFrames;
   const loopDurationMs = totalFrames * frameIntervalMs;
   const bytesPerSecond = fileSize === 0
     ? 0

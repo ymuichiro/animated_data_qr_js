@@ -8,12 +8,63 @@ function createSession(sessionId, totalChunks) {
     sessionId,
     totalChunks,
     chunkByteSize: null,
+    parityBlockDataChunks: 0,
     fileSize: null,
     mimeType: "application/octet-stream",
     fileName: `transfer-${sessionId}.bin`,
     chunks: new Array(totalChunks).fill(null),
+    parityChunks: new Map(),
     receivedChunks: 0,
     completed: false
+  };
+}
+
+function recoverParityChunk(session, blockStartChunkIndex) {
+  if (!session.parityBlockDataChunks || !session.parityChunks.has(blockStartChunkIndex)) {
+    return null;
+  }
+
+  const blockEndChunkIndex = Math.min(
+    session.totalChunks,
+    blockStartChunkIndex + session.parityBlockDataChunks
+  );
+  let missingChunkIndex = null;
+  let missingCount = 0;
+
+  for (let chunkIndex = blockStartChunkIndex; chunkIndex < blockEndChunkIndex; chunkIndex += 1) {
+    if (session.chunks[chunkIndex] === null) {
+      missingChunkIndex = chunkIndex;
+      missingCount += 1;
+      if (missingCount > 1) {
+        return null;
+      }
+    }
+  }
+
+  if (missingChunkIndex === null || missingCount !== 1 || !session.chunkByteSize) {
+    return null;
+  }
+
+  const parityBytes = session.parityChunks.get(blockStartChunkIndex);
+  const recoveredChunk = parityBytes.slice();
+  for (let chunkIndex = blockStartChunkIndex; chunkIndex < blockEndChunkIndex; chunkIndex += 1) {
+    if (chunkIndex === missingChunkIndex) {
+      continue;
+    }
+    const chunkBytes = session.chunks[chunkIndex];
+    for (let index = 0; index < chunkBytes.length; index += 1) {
+      recoveredChunk[index] ^= chunkBytes[index];
+    }
+  }
+
+  const isLastChunk = missingChunkIndex === session.totalChunks - 1;
+  const chunkLength = isLastChunk && Number.isInteger(session.fileSize)
+    ? session.fileSize - (missingChunkIndex * session.chunkByteSize)
+    : session.chunkByteSize;
+
+  return {
+    chunkIndex: missingChunkIndex,
+    chunkBytes: recoveredChunk.slice(0, chunkLength)
   };
 }
 
@@ -176,6 +227,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         }
       }
       session.chunkByteSize = frame.chunkByteSize;
+      session.parityBlockDataChunks = frame.parityBlockDataChunks ?? 0;
       session.fileSize = frame.fileSize;
       session.mimeType = frame.mimeType;
       session.fileName = frame.fileName;
@@ -185,6 +237,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         mimeType: session.mimeType,
         fileSize: session.fileSize,
         chunkByteSize: session.chunkByteSize,
+        parityBlockDataChunks: session.parityBlockDataChunks,
         totalChunks: session.totalChunks
       });
     } else if (frame.type === "chunk") {
@@ -197,6 +250,39 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         this.emit("chunk", {
           sessionId: session.sessionId,
           chunkIndex: frame.chunkIndex,
+          receivedChunks: session.receivedChunks,
+          totalChunks: session.totalChunks
+        });
+      }
+    } else if (frame.type === "parity") {
+      if (frame.totalChunks !== session.totalChunks) {
+        return { accepted: false, frame, result: null };
+      }
+      if (!session.parityChunks.has(frame.blockStartChunkIndex)) {
+        session.parityChunks.set(frame.blockStartChunkIndex, frame.dataBytes);
+      }
+      const recovered = recoverParityChunk(session, frame.blockStartChunkIndex);
+      if (recovered && session.chunks[recovered.chunkIndex] === null) {
+        session.chunks[recovered.chunkIndex] = recovered.chunkBytes;
+        session.receivedChunks += 1;
+        this.emit("recover", {
+          sessionId: session.sessionId,
+          chunkIndex: recovered.chunkIndex,
+          receivedChunks: session.receivedChunks,
+          totalChunks: session.totalChunks
+        });
+      }
+    }
+
+    if (frame.type === "chunk" && session.parityBlockDataChunks > 0) {
+      const blockStartChunkIndex = frame.chunkIndex - (frame.chunkIndex % session.parityBlockDataChunks);
+      const recovered = recoverParityChunk(session, blockStartChunkIndex);
+      if (recovered && session.chunks[recovered.chunkIndex] === null) {
+        session.chunks[recovered.chunkIndex] = recovered.chunkBytes;
+        session.receivedChunks += 1;
+        this.emit("recover", {
+          sessionId: session.sessionId,
+          chunkIndex: recovered.chunkIndex,
           receivedChunks: session.receivedChunks,
           totalChunks: session.totalChunks
         });

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   createTransferFrames,
   AnimatedQrReceiver,
-  estimateTransferStats
+  estimateTransferStats,
+  parseFrame
 } from "../src/index.js";
 
 function createFakeFile(name, type, bytes) {
@@ -84,5 +85,43 @@ describe("transfer flow", () => {
     expect(stats.totalFrames).toBe(5);
     expect(stats.loopDurationMs).toBe(1250);
     expect(stats.bytesPerSecond).toBeCloseTo(819.2, 1);
+  });
+
+  it("recovers one missing chunk per parity block", async () => {
+    const inputBytes = new TextEncoder().encode("abcdefgh12345678ABCDEFGH");
+    const transfer = await createTransferFrames(
+      createFakeFile("parity.txt", "text/plain", inputBytes),
+      {
+        chunkByteSize: 4,
+        sessionId: "parity-session",
+        parityBlockDataChunks: 2
+      }
+    );
+
+    const receiver = new AnimatedQrReceiver({
+      autoStopOnComplete: false
+    });
+
+    let recoveredChunkIndex = null;
+    let completed = null;
+    receiver.on("recover", (payload) => {
+      recoveredChunkIndex = payload.chunkIndex;
+    });
+    receiver.on("complete", (payload) => {
+      completed = payload;
+    });
+
+    for (const frame of transfer.frames) {
+      const parsed = parseFrame(frame);
+      if (parsed?.type === "chunk" && parsed.chunkIndex === 1) {
+        continue;
+      }
+      receiver.ingestFrame(frame);
+    }
+
+    expect(recoveredChunkIndex).toBe(1);
+    expect(completed).not.toBeNull();
+    const outputBytes = new Uint8Array(await completed.blob.arrayBuffer());
+    expect(Array.from(outputBytes)).toEqual(Array.from(inputBytes));
   });
 });

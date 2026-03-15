@@ -10,11 +10,20 @@ export type FrameParseResult =
       fileSize: number;
       mimeType: string;
       fileName: string;
+      parityBlockDataChunks: number;
     }
   | {
       type: "chunk";
       sessionId: string;
       chunkIndex: number;
+      totalChunks: number;
+      dataBytes: Uint8Array;
+      dataBase64Url?: string;
+    }
+  | {
+      type: "parity";
+      sessionId: string;
+      blockStartChunkIndex: number;
       totalChunks: number;
       dataBytes: Uint8Array;
       dataBase64Url?: string;
@@ -38,6 +47,7 @@ export interface CreateTransferFramesOptions {
   mimeType?: string;
   payloadEncoding?: PayloadEncoding;
   frameIntervalMs?: number;
+  parityBlockDataChunks?: number;
 }
 
 export interface PreparedTransfer {
@@ -48,6 +58,7 @@ export interface PreparedTransfer {
   chunkByteSize: number;
   totalChunks: number;
   payloadEncoding: PayloadEncoding;
+  parityBlockDataChunks: number;
   frames: FrameInput[];
   qrFrames: Array<string | Array<{ data: Uint8ClampedArray; mode: "byte" }>>;
   estimatedStats: TransferEstimate;
@@ -58,6 +69,7 @@ export interface SenderOptions {
   frameIntervalMs?: number;
   chunkByteSize?: number;
   payloadEncoding?: PayloadEncoding;
+  parityBlockDataChunks?: number;
   qrOptions?: Record<string, unknown>;
 }
 
@@ -84,6 +96,7 @@ export interface TransferPreset {
   frameIntervalMs: number;
   chunkByteSize: number;
   payloadEncoding: PayloadEncoding;
+  parityBlockDataChunks: number;
   qrOptions: {
     errorCorrectionLevel: "L" | "M" | "Q" | "H";
   };
@@ -103,6 +116,7 @@ export function encodeManifestFrame(input: {
   fileSize: number;
   mimeType: string;
   fileName: string;
+  parityBlockDataChunks?: number;
 }): string;
 export function encodeChunkFrame(input: {
   sessionId: string;
@@ -116,6 +130,18 @@ export function encodeChunkFrameBinary(input: {
   totalChunks: number;
   dataBytes: Uint8Array;
 }): Uint8Array;
+export function encodeParityFrame(input: {
+  sessionId: string;
+  blockStartChunkIndex: number;
+  totalChunks: number;
+  dataBase64Url: string;
+}): string;
+export function encodeParityFrameBinary(input: {
+  sessionId: string;
+  blockStartChunkIndex: number;
+  totalChunks: number;
+  dataBytes: Uint8Array;
+}): Uint8Array;
 export function parseFrame(frameInput: FrameInput): FrameParseResult;
 
 export function resolveTransferPreset(name?: string): TransferPreset;
@@ -124,6 +150,7 @@ export function estimateTransferStats(input: {
   chunkByteSize?: number;
   frameIntervalMs?: number;
   manifestFrames?: number;
+  extraFrames?: number;
 }): TransferEstimate;
 
 export function createTransferFrames(
@@ -137,6 +164,7 @@ export class AnimatedQrSender {
   frameIntervalMs: number;
   chunkByteSize: number;
   payloadEncoding: PayloadEncoding;
+  parityBlockDataChunks: number;
   prepared: PreparedTransfer | null;
   frameIndex: number;
   running: boolean;

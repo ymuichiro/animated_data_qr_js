@@ -5,7 +5,9 @@ import {
   createSessionId,
   encodeManifestFrame,
   encodeChunkFrame,
-  encodeChunkFrameBinary
+  encodeChunkFrameBinary,
+  encodeParityFrame,
+  encodeParityFrameBinary
 } from "./protocol.js";
 import { SimpleEmitter } from "./emitter.js";
 import {
@@ -71,6 +73,40 @@ function createChunkFrame({
   });
 }
 
+function createParityChunk(blockChunks, chunkByteSize) {
+  const parityBytes = new Uint8Array(chunkByteSize);
+  for (const chunkBytes of blockChunks) {
+    for (let index = 0; index < chunkBytes.length; index += 1) {
+      parityBytes[index] ^= chunkBytes[index];
+    }
+  }
+  return parityBytes;
+}
+
+function createParityFrame({
+  payloadEncoding,
+  sessionId,
+  blockStartChunkIndex,
+  totalChunks,
+  parityBytes
+}) {
+  if (payloadEncoding === "base64") {
+    return encodeParityFrame({
+      sessionId,
+      blockStartChunkIndex,
+      totalChunks,
+      dataBase64Url: bytesToBase64Url(parityBytes)
+    });
+  }
+
+  return encodeParityFrameBinary({
+    sessionId,
+    blockStartChunkIndex,
+    totalChunks,
+    dataBytes: parityBytes
+  });
+}
+
 export async function createTransferFrames(fileLike, options = {}) {
   const chunkByteSize = options.chunkByteSize ?? DEFAULT_CHUNK_BYTE_SIZE;
   if (!Number.isInteger(chunkByteSize) || chunkByteSize <= 0) {
@@ -80,6 +116,10 @@ export async function createTransferFrames(fileLike, options = {}) {
   const payloadEncoding = options.payloadEncoding ?? DEFAULT_PAYLOAD_ENCODING;
   if (payloadEncoding !== "binary" && payloadEncoding !== "base64") {
     throw new TypeError("payloadEncoding must be either 'binary' or 'base64'");
+  }
+  const parityBlockDataChunks = options.parityBlockDataChunks ?? 0;
+  if (!Number.isInteger(parityBlockDataChunks) || parityBlockDataChunks < 0) {
+    throw new TypeError("parityBlockDataChunks must be an integer >= 0");
   }
 
   const bytes = await blobLikeToBytes(fileLike);
@@ -95,25 +135,47 @@ export async function createTransferFrames(fileLike, options = {}) {
     chunkByteSize,
     fileSize: bytes.length,
     mimeType,
-    fileName
+    fileName,
+    parityBlockDataChunks
   });
 
-  const chunkFrames = chunks.map((chunkBytes, chunkIndex) => {
-    return createChunkFrame({
+  const chunkFrames = [];
+  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+    const chunkBytes = chunks[chunkIndex];
+    chunkFrames.push(createChunkFrame({
       payloadEncoding,
       sessionId,
       chunkIndex,
       totalChunks,
       chunkBytes
-    });
-  });
+    }));
+
+    if (
+      parityBlockDataChunks > 0
+      && ((chunkIndex + 1) % parityBlockDataChunks === 0 || chunkIndex === chunks.length - 1)
+    ) {
+      const blockStartChunkIndex = chunkIndex - ((chunkIndex % parityBlockDataChunks));
+      const blockChunks = chunks.slice(blockStartChunkIndex, chunkIndex + 1);
+      const parityBytes = createParityChunk(blockChunks, chunkByteSize);
+      chunkFrames.push(createParityFrame({
+        payloadEncoding,
+        sessionId,
+        blockStartChunkIndex,
+        totalChunks,
+        parityBytes
+      }));
+    }
+  }
 
   const frames = [manifestFrame, ...chunkFrames];
   const qrFrames = frames.map((frame) => toQrFrame(frame));
   const estimatedStats = estimateTransferStats({
     fileSize: bytes.length,
     chunkByteSize,
-    frameIntervalMs: options.frameIntervalMs ?? DEFAULT_FRAME_INTERVAL_MS
+    frameIntervalMs: options.frameIntervalMs ?? DEFAULT_FRAME_INTERVAL_MS,
+    extraFrames: parityBlockDataChunks > 0
+      ? Math.ceil(totalChunks / parityBlockDataChunks)
+      : 0
   });
 
   return {
@@ -124,6 +186,7 @@ export async function createTransferFrames(fileLike, options = {}) {
     chunkByteSize,
     totalChunks,
     payloadEncoding,
+    parityBlockDataChunks,
     frames,
     qrFrames,
     estimatedStats
@@ -137,6 +200,7 @@ export class AnimatedQrSender extends SimpleEmitter {
     this.frameIntervalMs = options.frameIntervalMs ?? DEFAULT_FRAME_INTERVAL_MS;
     this.chunkByteSize = options.chunkByteSize ?? DEFAULT_CHUNK_BYTE_SIZE;
     this.payloadEncoding = options.payloadEncoding ?? DEFAULT_PAYLOAD_ENCODING;
+    this.parityBlockDataChunks = options.parityBlockDataChunks ?? 0;
     this.qrOptions = {
       errorCorrectionLevel: "M",
       margin: 1,
@@ -161,6 +225,7 @@ export class AnimatedQrSender extends SimpleEmitter {
       fileName: options.fileName,
       mimeType: options.mimeType,
       payloadEncoding: options.payloadEncoding ?? this.payloadEncoding,
+      parityBlockDataChunks: options.parityBlockDataChunks ?? this.parityBlockDataChunks,
       frameIntervalMs: options.frameIntervalMs ?? this.frameIntervalMs
     });
 

@@ -4,6 +4,7 @@ import {
   encodeManifestFrame,
   encodeChunkFrame,
   encodeChunkFrameBinary,
+  encodeParityFrameBinary,
   parseFrame
 } from "../src/index.js";
 
@@ -29,6 +30,7 @@ describe("protocol", () => {
     expect(parsed?.fileSize).toBe(9999);
     expect(parsed?.mimeType).toBe("application/zip");
     expect(parsed?.fileName).toBe("archive.zip");
+    expect(parsed?.parityBlockDataChunks).toBe(0);
   });
 
   it("encodes and parses chunk frame", () => {
@@ -64,6 +66,23 @@ describe("protocol", () => {
     expect(parsed?.chunkIndex).toBe(2);
     expect(parsed?.totalChunks).toBe(20);
     expect(Array.from(parsed?.dataBytes ?? [])).toEqual([1, 2, 3, 255]);
+  });
+
+  it("encodes and parses binary parity frame", () => {
+    const frameBytes = encodeParityFrameBinary({
+      sessionId: "session123",
+      blockStartChunkIndex: 8,
+      totalChunks: 20,
+      dataBytes: new Uint8Array([9, 8, 7, 6])
+    });
+
+    const parsed = parseFrame(frameBytes);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.type).toBe("parity");
+    expect(parsed?.sessionId).toBe("session123");
+    expect(parsed?.blockStartChunkIndex).toBe(8);
+    expect(parsed?.totalChunks).toBe(20);
+    expect(Array.from(parsed?.dataBytes ?? [])).toEqual([9, 8, 7, 6]);
   });
 
   it("returns null for unrelated text", () => {

@@ -4,6 +4,8 @@ export {
   encodeManifestFrame,
   encodeChunkFrame,
   encodeChunkFrameBinary,
+  encodeParityFrame,
+  encodeParityFrameBinary,
   parseFrame
 } from "./protocol.js";
 

@@ -28,10 +28,12 @@
               <option value="compatibility" selected>compatibility</option>
               <option value="balanced">balanced</option>
               <option value="throughput">throughput</option>
+              <option value="resilient">resilient</option>
             </select>
           </label>
           <label>Chunk bytes: <input id="chunkSizeInput" type="number" value="220" min="32" max="1024" /></label>
           <label>Frame ms: <input id="frameMsInput" type="number" value="250" min="60" max="2000" /></label>
+          <label>Parity block: <input id="parityBlockInput" type="number" value="0" min="0" max="64" /></label>
           <label>
             EC:
             <select id="ecLevelSelect">
@@ -63,6 +65,7 @@
       const presetSelect = document.getElementById("presetSelect");
       const chunkSizeInput = document.getElementById("chunkSizeInput");
       const frameMsInput = document.getElementById("frameMsInput");
+      const parityBlockInput = document.getElementById("parityBlockInput");
       const ecLevelSelect = document.getElementById("ecLevelSelect");
       const prepareBtn = document.getElementById("prepareBtn");
       const startBtn = document.getElementById("startBtn");
@@ -85,13 +88,14 @@
       }
 
       function createPreparedSummary(payload) {
-        return `prepared: ${payload.fileName}, chunks=${payload.totalChunks}, 1 loop=${formatDuration(payload.estimatedStats.loopDurationMs)}, ~${Math.round(payload.estimatedStats.bytesPerSecond)} B/s`;
+        return `prepared: ${payload.fileName}, chunks=${payload.totalChunks}, parity=${payload.parityBlockDataChunks || 0}, 1 loop=${formatDuration(payload.estimatedStats.loopDurationMs)}, ~${Math.round(payload.estimatedStats.bytesPerSecond)} B/s`;
       }
 
       function applyPreset(name) {
         const preset = resolveTransferPreset(name);
         chunkSizeInput.value = String(preset.chunkByteSize);
         frameMsInput.value = String(preset.frameIntervalMs);
+        parityBlockInput.value = String(preset.parityBlockDataChunks || 0);
         ecLevelSelect.value = preset.qrOptions.errorCorrectionLevel;
       }
 
@@ -128,9 +132,11 @@
         }
         sender.chunkByteSize = Number(chunkSizeInput.value);
         sender.frameIntervalMs = Number(frameMsInput.value);
+        sender.parityBlockDataChunks = Number(parityBlockInput.value);
         sender.qrOptions.errorCorrectionLevel = ecLevelSelect.value;
         await sender.prepare(file, {
-          chunkByteSize: Number(chunkSizeInput.value)
+          chunkByteSize: Number(chunkSizeInput.value),
+          parityBlockDataChunks: Number(parityBlockInput.value)
         });
       });
 

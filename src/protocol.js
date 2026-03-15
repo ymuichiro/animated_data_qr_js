@@ -110,6 +110,9 @@ function parseTextFrame(frameText) {
 
     let mimeType;
     let fileName;
+    const parityBlockDataChunks = parts.length >= 9
+      ? parsePositiveInt(parts[8]) ?? 0
+      : 0;
     try {
       mimeType = decodeText(parts[6]) || "application/octet-stream";
       fileName = decodeText(parts[7]) || "transfer.bin";
@@ -124,7 +127,8 @@ function parseTextFrame(frameText) {
       chunkByteSize,
       fileSize,
       mimeType,
-      fileName
+      fileName,
+      parityBlockDataChunks
     };
   }
 
@@ -146,6 +150,33 @@ function parseTextFrame(frameText) {
         type: "chunk",
         sessionId: parts[2],
         chunkIndex,
+        totalChunks,
+        dataBase64Url,
+        dataBytes: base64UrlToBytes(dataBase64Url)
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  if (parts[1] === "P") {
+    if (parts.length < 6) {
+      return null;
+    }
+
+    const blockStartChunkIndex = parsePositiveInt(parts[3]);
+    const totalChunks = parsePositiveInt(parts[4]);
+    const dataBase64Url = parts[5];
+
+    if (blockStartChunkIndex === null || totalChunks === null || totalChunks <= 0) {
+      return null;
+    }
+
+    try {
+      return {
+        type: "parity",
+        sessionId: parts[2],
+        blockStartChunkIndex,
         totalChunks,
         dataBase64Url,
         dataBytes: base64UrlToBytes(dataBase64Url)
@@ -179,27 +210,37 @@ function parseBinaryFrame(frameBytes) {
     return parseTextFrame(asciiBytesToString(bytes));
   }
 
-  if (frameType === "C") {
+  if (frameType === "C" || frameType === "P") {
     if (separators.length < 5) {
       return null;
     }
 
     const sessionId = asciiBytesToString(bytes.subarray(separators[1] + 1, separators[2]));
-    const chunkIndex = parsePositiveInt(
+    const indexValue = parsePositiveInt(
       asciiBytesToString(bytes.subarray(separators[2] + 1, separators[3]))
     );
     const totalChunks = parsePositiveInt(
       asciiBytesToString(bytes.subarray(separators[3] + 1, separators[4]))
     );
 
-    if (!sessionId || chunkIndex === null || totalChunks === null || totalChunks <= 0) {
+    if (!sessionId || indexValue === null || totalChunks === null || totalChunks <= 0) {
       return null;
     }
 
+    if (frameType === "C") {
+      return {
+        type: "chunk",
+        sessionId,
+        chunkIndex: indexValue,
+        totalChunks,
+        dataBytes: bytes.slice(separators[4] + 1)
+      };
+    }
+
     return {
-      type: "chunk",
+      type: "parity",
       sessionId,
-      chunkIndex,
+      blockStartChunkIndex: indexValue,
       totalChunks,
       dataBytes: bytes.slice(separators[4] + 1)
     };
@@ -222,7 +263,8 @@ export function encodeManifestFrame({
   chunkByteSize,
   fileSize,
   mimeType,
-  fileName
+  fileName,
+  parityBlockDataChunks = 0
 }) {
   if (!sessionId) {
     throw new Error("sessionId is required");
@@ -235,7 +277,8 @@ export function encodeManifestFrame({
     String(chunkByteSize),
     String(fileSize),
     encodeText(mimeType || "application/octet-stream"),
-    encodeText(fileName || "transfer.bin")
+    encodeText(fileName || "transfer.bin"),
+    String(parityBlockDataChunks)
   ];
   return parts.join(FRAME_SEPARATOR);
 }
@@ -269,6 +312,35 @@ export function encodeChunkFrame({
   ].join(FRAME_SEPARATOR);
 }
 
+export function encodeParityFrame({
+  sessionId,
+  blockStartChunkIndex,
+  totalChunks,
+  dataBase64Url
+}) {
+  if (!sessionId) {
+    throw new Error("sessionId is required");
+  }
+  if (!Number.isInteger(blockStartChunkIndex) || blockStartChunkIndex < 0) {
+    throw new Error("blockStartChunkIndex must be an integer >= 0");
+  }
+  if (!Number.isInteger(totalChunks) || totalChunks <= 0) {
+    throw new Error("totalChunks must be an integer > 0");
+  }
+  if (typeof dataBase64Url !== "string") {
+    throw new Error("dataBase64Url must be a string");
+  }
+
+  return [
+    PROTOCOL_MAGIC,
+    "P",
+    sessionId,
+    String(blockStartChunkIndex),
+    String(totalChunks),
+    dataBase64Url
+  ].join(FRAME_SEPARATOR);
+}
+
 export function encodeChunkFrameBinary({
   sessionId,
   chunkIndex,
@@ -296,6 +368,41 @@ export function encodeChunkFrameBinary({
       "C",
       sessionId,
       String(chunkIndex),
+      String(totalChunks),
+      ""
+    ].join(FRAME_SEPARATOR)
+  );
+
+  return concatBytes([headerBytes, payloadBytes]);
+}
+
+export function encodeParityFrameBinary({
+  sessionId,
+  blockStartChunkIndex,
+  totalChunks,
+  dataBytes
+}) {
+  if (!sessionId) {
+    throw new Error("sessionId is required");
+  }
+  if (!Number.isInteger(blockStartChunkIndex) || blockStartChunkIndex < 0) {
+    throw new Error("blockStartChunkIndex must be an integer >= 0");
+  }
+  if (!Number.isInteger(totalChunks) || totalChunks <= 0) {
+    throw new Error("totalChunks must be an integer > 0");
+  }
+
+  const payloadBytes = asUint8Array(dataBytes);
+  if (!payloadBytes) {
+    throw new Error("dataBytes must be Uint8Array-compatible");
+  }
+
+  const headerBytes = asciiStringToBytes(
+    [
+      PROTOCOL_MAGIC,
+      "P",
+      sessionId,
+      String(blockStartChunkIndex),
       String(totalChunks),
       ""
     ].join(FRAME_SEPARATOR)

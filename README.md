@@ -74,6 +74,7 @@ import {
 - `compatibility`: `220 bytes`, `250ms`, `EC=M`
 - `balanced`: `384 bytes`, `250ms`, `EC=M`
 - `throughput`: `512 bytes`, `250ms`, `EC=L`
+- `resilient`: `220 bytes`, `250ms`, `EC=M`, `parityBlockDataChunks=8`
 
 ### `estimateTransferStats({ fileSize, chunkByteSize, frameIntervalMs })`
 
@@ -104,6 +105,7 @@ import {
 5. 欠損対策として軽い parity/FEC を足し、何周も待たずに復元できるようにする
 
 このライブラリでは 2 の「binary payload」を既定値に変更しています。  
+さらに `parityBlockDataChunks` を設定すると、ブロックごとに XOR parity を 1 枚追加して、1 枚だけ欠けたブロックを復元できます。  
 `/sender` デモでは preset 切替と、現在の設定での「1 周時間」「概算スループット」を表示します。
 
 ## Development
