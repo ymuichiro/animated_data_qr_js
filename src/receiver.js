@@ -387,6 +387,17 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     return Array.from(counts).sort((left, right) => left - right);
   }
 
+  #getExpectedSymbolsPerFrame() {
+    let expectedSymbolsPerFrame = 1;
+    for (const session of this.sessions.values()) {
+      expectedSymbolsPerFrame = Math.max(expectedSymbolsPerFrame, session.symbolsPerFrame || 1);
+    }
+    if (expectedSymbolsPerFrame === 1) {
+      expectedSymbolsPerFrame = Math.max(1, this.maxSymbolsPerFrame);
+    }
+    return expectedSymbolsPerFrame;
+  }
+
   #dedupeFrameInputs(inputs) {
     const unique = new Map();
     for (const input of inputs) {
@@ -405,6 +416,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     }
 
     const detectedInputs = [];
+    const expectedSymbolsPerFrame = this.#getExpectedSymbolsPerFrame();
 
     if (this.detector) {
       try {
@@ -423,12 +435,8 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       }
     }
 
-    if (detectedInputs.length > 0) {
-      return this.#dedupeFrameInputs(detectedInputs);
-    }
-
     if (!this.scanCanvas || !this.scanContext) {
-      return [];
+      return this.#dedupeFrameInputs(detectedInputs);
     }
 
     const width = this.video.videoWidth;
@@ -446,7 +454,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
 
     this.scanContext.drawImage(this.video, 0, 0, width, height);
 
-    const inputs = [];
+    const inputs = [...detectedInputs];
     const fullFrame = this.scanContext.getImageData(0, 0, width, height);
     const fullResult = jsQR(fullFrame.data, width, height, {
       inversionAttempts: "dontInvert"
@@ -455,30 +463,32 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       inputs.push(fullResult.binaryData ? new Uint8Array(fullResult.binaryData) : fullResult.data);
     }
 
-    const gap = 12;
-    for (const symbolCount of this.#getCandidateSymbolCounts()) {
-      if (symbolCount === 1) {
-        continue;
-      }
-      const { columns, rows } = getGridDimensions(symbolCount);
-      const cellWidth = Math.floor((width - (gap * (columns + 1))) / columns);
-      const cellHeight = Math.floor((height - (gap * (rows + 1))) / rows);
-      for (let index = 0; index < symbolCount; index += 1) {
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-        const x = Math.max(0, gap + (column * (cellWidth + gap)) - 4);
-        const y = Math.max(0, gap + (row * (cellHeight + gap)) - 4);
-        const sampleWidth = Math.min(width - x, cellWidth + 8);
-        const sampleHeight = Math.min(height - y, cellHeight + 8);
-        if (sampleWidth <= 0 || sampleHeight <= 0) {
+    if (this.#dedupeFrameInputs(inputs).length < expectedSymbolsPerFrame) {
+      const gap = 12;
+      for (const symbolCount of this.#getCandidateSymbolCounts()) {
+        if (symbolCount === 1) {
           continue;
         }
-        const cellFrame = this.scanContext.getImageData(x, y, sampleWidth, sampleHeight);
-        const cellResult = jsQR(cellFrame.data, sampleWidth, sampleHeight, {
-          inversionAttempts: "dontInvert"
-        });
-        if (cellResult) {
-          inputs.push(cellResult.binaryData ? new Uint8Array(cellResult.binaryData) : cellResult.data);
+        const { columns, rows } = getGridDimensions(symbolCount);
+        const cellWidth = Math.floor((width - (gap * (columns + 1))) / columns);
+        const cellHeight = Math.floor((height - (gap * (rows + 1))) / rows);
+        for (let index = 0; index < symbolCount; index += 1) {
+          const column = index % columns;
+          const row = Math.floor(index / columns);
+          const x = Math.max(0, gap + (column * (cellWidth + gap)) - 4);
+          const y = Math.max(0, gap + (row * (cellHeight + gap)) - 4);
+          const sampleWidth = Math.min(width - x, cellWidth + 8);
+          const sampleHeight = Math.min(height - y, cellHeight + 8);
+          if (sampleWidth <= 0 || sampleHeight <= 0) {
+            continue;
+          }
+          const cellFrame = this.scanContext.getImageData(x, y, sampleWidth, sampleHeight);
+          const cellResult = jsQR(cellFrame.data, sampleWidth, sampleHeight, {
+            inversionAttempts: "dontInvert"
+          });
+          if (cellResult) {
+            inputs.push(cellResult.binaryData ? new Uint8Array(cellResult.binaryData) : cellResult.data);
+          }
         }
       }
     }

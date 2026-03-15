@@ -98,6 +98,14 @@ test("multi-QR transfer completes in browser runtime", async ({ page }) => {
   await page.goto("/examples/index.html");
 
   const result = await page.evaluate(async () => {
+    window.BarcodeDetector = class FakeBarcodeDetector {
+      async detect() {
+        return [{
+          rawValue: window.__multiQrFallbackFrame
+        }];
+      }
+    };
+
     const { AnimatedQrSender, AnimatedQrReceiver } = await import("/dist/animated-data-qr.esm.js");
 
     const senderCanvas = document.createElement("canvas");
@@ -131,6 +139,7 @@ test("multi-QR transfer completes in browser runtime", async ({ page }) => {
     });
 
     await sender.prepare(file);
+    window.__multiQrFallbackFrame = sender.prepared.frames[0];
     await sender.start();
 
     const stream = senderCanvas.captureStream(30);
@@ -141,7 +150,7 @@ test("multi-QR transfer completes in browser runtime", async ({ page }) => {
       video: receiverVideo,
       scanIntervalMs: 80,
       autoStopOnComplete: true,
-      preferBarcodeDetector: false,
+      preferBarcodeDetector: true,
       maxSymbolsPerFrame: 4
     });
 
