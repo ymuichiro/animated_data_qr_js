@@ -1,0 +1,59 @@
+{
+  "name": "animated-data-qr-js",
+  "version": "0.1.0",
+  "description": "Offline browser-to-browser file transfer over animated QR codes.",
+  "homepage": "https://github.com/ymuichiro/animated_data_qr_js#readme",
+  "bugs": {
+    "url": "https://github.com/ymuichiro/animated_data_qr_js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ymuichiro/animated_data_qr_js.git"
+  },
+  "type": "module",
+  "main": "./dist/animated-data-qr.cjs.js",
+  "module": "./dist/animated-data-qr.esm.js",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/animated-data-qr.umd.min.js",
+  "jsdelivr": "./dist/animated-data-qr.umd.min.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/animated-data-qr.esm.js",
+      "require": "./dist/animated-data-qr.cjs.js",
+      "default": "./dist/animated-data-qr.esm.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:pages": "npm run build && node scripts/build-pages.mjs",
+    "test": "vitest run test",
+    "test:watch": "vitest test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "keywords": [
+    "qr",
+    "animated-qr",
+    "offline",
+    "file-transfer",
+    "browser"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "esbuild": "^0.25.0",
+    "vitest": "^1.6.1"
+  }
+}

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reciever Demo</title>
+    <link rel="stylesheet" href="../assets/demo.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="../">Home</a>
+        <a href="../sender/">/sender</a>
+        <a href="../reciever/">/reciever</a>
+      </nav>
+
+      <section class="panel">
+        <h1>受信モード /reciever</h1>
+        <p class="muted">送信側画面をカメラで読み取ってファイルを復元します。</p>
+
+        <video id="video" autoplay muted playsinline></video>
+
+        <div class="row">
+          <button id="startBtn">Start Camera + Scan</button>
+          <button id="stopBtn">Stop</button>
+        </div>
+
+        <p id="status" class="status">status: idle</p>
+        <a id="download" style="display: none;">Download</a>
+      </section>
+    </div>
+
+    <script type="module">
+      import {
+        AnimatedQrReceiver,
+        createDownloadLink
+      } from "../dist/animated-data-qr.esm.js";
+
+      const video = document.getElementById("video");
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const status = document.getElementById("status");
+      const download = document.getElementById("download");
+
+      const receiver = new AnimatedQrReceiver({
+        video,
+        scanIntervalMs: 100
+      });
+
+      receiver.on("scan-start", () => {
+        status.textContent = "status: scanning";
+      });
+
+      receiver.on("progress", (payload) => {
+        status.textContent = `receiving: ${payload.receivedChunks}/${payload.totalChunks} (${Math.round(payload.ratio * 100)}%)`;
+      });
+
+      receiver.on("complete", (result) => {
+        const { url, anchor } = createDownloadLink(result, download);
+        anchor.style.display = "";
+        anchor.textContent = `Download ${result.fileName} (${result.size} bytes)`;
+        anchor.addEventListener("click", () => {
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }, { once: true });
+        status.textContent = "status: complete";
+      });
+
+      receiver.on("error", ({ error }) => {
+        status.textContent = `error: ${error?.message ?? String(error)}`;
+      });
+
+      startBtn.addEventListener("click", async () => {
+        download.style.display = "none";
+        await receiver.start();
+      });
+
+      stopBtn.addEventListener("click", () => {
+        receiver.stop();
+        receiver.stopCamera();
+        status.textContent = "status: stopped";
+      });
+    </script>
+  </body>
+</html>

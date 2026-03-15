@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sender Demo</title>
+    <link rel="stylesheet" href="../assets/demo.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="../">Home</a>
+        <a href="../sender/">/sender</a>
+        <a href="../reciever/">/reciever</a>
+      </nav>
+
+      <section class="panel">
+        <h1>送信モード /sender</h1>
+        <p class="muted">ファイルを選択して animated QR の送信を開始します。</p>
+
+        <div class="row">
+          <input id="fileInput" type="file" />
+        </div>
+        <div class="row">
+          <label>Chunk bytes: <input id="chunkSizeInput" type="number" value="220" min="32" max="1024" /></label>
+          <label>Frame ms: <input id="frameMsInput" type="number" value="120" min="60" max="2000" /></label>
+        </div>
+        <div class="row">
+          <button id="prepareBtn">Prepare</button>
+          <button id="startBtn">Start</button>
+          <button id="stopBtn">Stop</button>
+        </div>
+
+        <p id="status" class="status">status: idle</p>
+        <canvas id="qrCanvas"></canvas>
+      </section>
+    </div>
+
+    <script type="module">
+      import { AnimatedQrSender } from "../dist/animated-data-qr.esm.js";
+
+      const fileInput = document.getElementById("fileInput");
+      const chunkSizeInput = document.getElementById("chunkSizeInput");
+      const frameMsInput = document.getElementById("frameMsInput");
+      const prepareBtn = document.getElementById("prepareBtn");
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const status = document.getElementById("status");
+      const canvas = document.getElementById("qrCanvas");
+
+      const sender = new AnimatedQrSender({
+        canvas,
+        chunkByteSize: Number(chunkSizeInput.value),
+        frameIntervalMs: Number(frameMsInput.value)
+      });
+
+      sender.on("prepared", (payload) => {
+        status.textContent = `prepared: ${payload.fileName}, chunks=${payload.totalChunks}, session=${payload.sessionId}`;
+      });
+      sender.on("frame", (payload) => {
+        status.textContent = `sending: frame ${payload.frameIndex + 1}`;
+      });
+      sender.on("stop", () => {
+        status.textContent = "status: stopped";
+      });
+      sender.on("error", ({ error }) => {
+        status.textContent = `error: ${error?.message ?? String(error)}`;
+      });
+
+      prepareBtn.addEventListener("click", async () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+          status.textContent = "ファイルを選択してください";
+          return;
+        }
+        sender.chunkByteSize = Number(chunkSizeInput.value);
+        sender.frameIntervalMs = Number(frameMsInput.value);
+        await sender.prepare(file, {
+          chunkByteSize: Number(chunkSizeInput.value)
+        });
+      });
+
+      startBtn.addEventListener("click", async () => {
+        if (!sender.prepared) {
+          status.textContent = "先に Prepare を押してください";
+          return;
+        }
+        await sender.start();
+      });
+
+      stopBtn.addEventListener("click", () => {
+        sender.stop();
+      });
+    </script>
+  </body>
+</html>
