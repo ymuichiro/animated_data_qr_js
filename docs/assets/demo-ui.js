@@ -247,6 +247,11 @@ export function initSenderDemo({
 
   function openStageDialog() {
     openDialog(stageDialog);
+    if (state.prepared) {
+      requestAnimationFrame(() => {
+        void sender.renderFrameAt(state.running ? sender.frameIndex : 0).catch(() => {});
+      });
+    }
   }
 
   function closeStageDialog() {
