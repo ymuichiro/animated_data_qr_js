@@ -46,8 +46,25 @@
         <input id="fileInput" type="file" />
       </div>
       <div class="row">
+        <label>
+          Preset:
+          <select id="presetSelect">
+            <option value="compatibility" selected>compatibility</option>
+            <option value="balanced">balanced</option>
+            <option value="throughput">throughput</option>
+          </select>
+        </label>
         <label>Chunk bytes: <input id="chunkSizeInput" type="number" value="220" min="32" max="1024" /></label>
-        <label>Frame ms: <input id="frameMsInput" type="number" value="120" min="60" max="2000" /></label>
+        <label>Frame ms: <input id="frameMsInput" type="number" value="250" min="60" max="2000" /></label>
+        <label>
+          EC:
+          <select id="ecLevelSelect">
+            <option value="L">L</option>
+            <option value="M" selected>M</option>
+            <option value="Q">Q</option>
+            <option value="H">H</option>
+          </select>
+        </label>
       </div>
       <div class="row">
         <button id="prepareBtn">Prepare</button>
@@ -60,11 +77,16 @@
     </main>
 
     <script type="module">
-      import { AnimatedQrSender } from "../dist/animated-data-qr.esm.js";
+      import {
+        AnimatedQrSender,
+        resolveTransferPreset
+      } from "../dist/animated-data-qr.esm.js";
 
       const fileInput = document.getElementById("fileInput");
+      const presetSelect = document.getElementById("presetSelect");
       const chunkSizeInput = document.getElementById("chunkSizeInput");
       const frameMsInput = document.getElementById("frameMsInput");
+      const ecLevelSelect = document.getElementById("ecLevelSelect");
       const prepareBtn = document.getElementById("prepareBtn");
       const startBtn = document.getElementById("startBtn");
       const stopBtn = document.getElementById("stopBtn");
@@ -72,6 +94,31 @@
       const canvas = document.getElementById("qrCanvas");
 
       let sender = null;
+
+      function formatDuration(ms) {
+        const totalSeconds = Math.ceil(ms / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) {
+          return `${hours}h ${minutes}m ${seconds}s`;
+        }
+        if (minutes > 0) {
+          return `${minutes}m ${seconds}s`;
+        }
+        return `${seconds}s`;
+      }
+
+      function createPreparedSummary(payload) {
+        return `prepared: ${payload.fileName}, chunks=${payload.totalChunks}, 1 loop=${formatDuration(payload.estimatedStats.loopDurationMs)}, ~${Math.round(payload.estimatedStats.bytesPerSecond)} B/s`;
+      }
+
+      function applyPreset(name) {
+        const preset = resolveTransferPreset(name);
+        chunkSizeInput.value = String(preset.chunkByteSize);
+        frameMsInput.value = String(preset.frameIntervalMs);
+        ecLevelSelect.value = preset.qrOptions.errorCorrectionLevel;
+      }
 
       function ensureSender() {
         if (!sender) {
@@ -81,7 +128,7 @@
             frameIntervalMs: Number(frameMsInput.value)
           });
           sender.on("prepared", (payload) => {
-            status.textContent = `prepared: ${payload.fileName}, chunks=${payload.totalChunks}, session=${payload.sessionId}`;
+            status.textContent = createPreparedSummary(payload);
           });
           sender.on("frame", (payload) => {
             status.textContent = `sending session=${payload.sessionId}, frame=${payload.frameIndex + 1}`;
@@ -95,7 +142,14 @@
         }
         sender.chunkByteSize = Number(chunkSizeInput.value);
         sender.frameIntervalMs = Number(frameMsInput.value);
+        sender.qrOptions.errorCorrectionLevel = ecLevelSelect.value;
       }
+
+      presetSelect.addEventListener("change", () => {
+        applyPreset(presetSelect.value);
+      });
+
+      applyPreset(presetSelect.value);
 
       prepareBtn.addEventListener("click", async () => {
         const file = fileInput.files?.[0];

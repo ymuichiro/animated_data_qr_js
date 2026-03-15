@@ -1,5 +1,4 @@
 import jsQR from "jsqr";
-import { base64UrlToBytes } from "./utils/base64.js";
 import { concatChunks } from "./utils/chunk.js";
 import { parseFrame } from "./protocol.js";
 import { SimpleEmitter } from "./emitter.js";
@@ -155,8 +154,8 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     return session ? createProgressPayload(session) : null;
   }
 
-  ingestFrameText(frameText) {
-    const frame = parseFrame(frameText);
+  ingestFrame(frameInput) {
+    const frame = parseFrame(frameInput);
     if (!frame || !frame.sessionId) {
       return { accepted: false, frame: null, result: null };
     }
@@ -193,7 +192,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         return { accepted: false, frame, result: null };
       }
       if (session.chunks[frame.chunkIndex] === null) {
-        session.chunks[frame.chunkIndex] = base64UrlToBytes(frame.dataBase64Url);
+        session.chunks[frame.chunkIndex] = frame.dataBytes;
         session.receivedChunks += 1;
         this.emit("chunk", {
           sessionId: session.sessionId,
@@ -241,15 +240,19 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     return { accepted: true, frame, result: null };
   }
 
+  ingestFrameText(frameInput) {
+    return this.ingestFrame(frameInput);
+  }
+
   async #scanTick() {
     if (!this.scanning) {
       return;
     }
 
     try {
-      const frameText = await this.#readFrameText();
-      if (frameText) {
-        this.ingestFrameText(frameText);
+      const frameInput = await this.#readFrameInput();
+      if (frameInput) {
+        this.ingestFrame(frameInput);
       }
     } catch (error) {
       this.emit("error", { error });
@@ -262,7 +265,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     }
   }
 
-  async #readFrameText() {
+  async #readFrameInput() {
     if (!this.video || this.video.readyState < 2) {
       return null;
     }
@@ -271,7 +274,10 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       try {
         const codes = await this.detector.detect(this.video);
         if (codes.length > 0 && codes[0].rawValue) {
-          return codes[0].rawValue;
+          const parsed = parseFrame(codes[0].rawValue);
+          if (parsed) {
+            return codes[0].rawValue;
+          }
         }
       } catch {
         this.detector = null;
@@ -301,6 +307,14 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       inversionAttempts: "dontInvert"
     });
 
-    return result?.data ?? null;
+    if (!result) {
+      return null;
+    }
+
+    if (result.binaryData) {
+      return new Uint8Array(result.binaryData);
+    }
+
+    return result.data ?? null;
   }
 }

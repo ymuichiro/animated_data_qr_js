@@ -4,9 +4,27 @@ import { splitBytes } from "./utils/chunk.js";
 import {
   createSessionId,
   encodeManifestFrame,
-  encodeChunkFrame
+  encodeChunkFrame,
+  encodeChunkFrameBinary
 } from "./protocol.js";
 import { SimpleEmitter } from "./emitter.js";
+import {
+  DEFAULT_CHUNK_BYTE_SIZE,
+  DEFAULT_FRAME_INTERVAL_MS,
+  DEFAULT_PAYLOAD_ENCODING,
+  estimateTransferStats
+} from "./tuning.js";
+
+function toQrFrame(frame) {
+  if (typeof frame === "string") {
+    return frame;
+  }
+
+  return [{
+    data: new Uint8ClampedArray(frame),
+    mode: "byte"
+  }];
+}
 
 async function blobLikeToBytes(fileLike) {
   if (!fileLike || typeof fileLike.arrayBuffer !== "function") {
@@ -29,10 +47,39 @@ function getDefaultMimeType(fileLike) {
   return "application/octet-stream";
 }
 
+function createChunkFrame({
+  payloadEncoding,
+  sessionId,
+  chunkIndex,
+  totalChunks,
+  chunkBytes
+}) {
+  if (payloadEncoding === "base64") {
+    return encodeChunkFrame({
+      sessionId,
+      chunkIndex,
+      totalChunks,
+      dataBase64Url: bytesToBase64Url(chunkBytes)
+    });
+  }
+
+  return encodeChunkFrameBinary({
+    sessionId,
+    chunkIndex,
+    totalChunks,
+    dataBytes: chunkBytes
+  });
+}
+
 export async function createTransferFrames(fileLike, options = {}) {
-  const chunkByteSize = options.chunkByteSize ?? 220;
+  const chunkByteSize = options.chunkByteSize ?? DEFAULT_CHUNK_BYTE_SIZE;
   if (!Number.isInteger(chunkByteSize) || chunkByteSize <= 0) {
     throw new TypeError("chunkByteSize must be an integer > 0");
+  }
+
+  const payloadEncoding = options.payloadEncoding ?? DEFAULT_PAYLOAD_ENCODING;
+  if (payloadEncoding !== "binary" && payloadEncoding !== "base64") {
+    throw new TypeError("payloadEncoding must be either 'binary' or 'base64'");
   }
 
   const bytes = await blobLikeToBytes(fileLike);
@@ -52,12 +99,21 @@ export async function createTransferFrames(fileLike, options = {}) {
   });
 
   const chunkFrames = chunks.map((chunkBytes, chunkIndex) => {
-    return encodeChunkFrame({
+    return createChunkFrame({
+      payloadEncoding,
       sessionId,
       chunkIndex,
       totalChunks,
-      dataBase64Url: bytesToBase64Url(chunkBytes)
+      chunkBytes
     });
+  });
+
+  const frames = [manifestFrame, ...chunkFrames];
+  const qrFrames = frames.map((frame) => toQrFrame(frame));
+  const estimatedStats = estimateTransferStats({
+    fileSize: bytes.length,
+    chunkByteSize,
+    frameIntervalMs: options.frameIntervalMs ?? DEFAULT_FRAME_INTERVAL_MS
   });
 
   return {
@@ -67,7 +123,10 @@ export async function createTransferFrames(fileLike, options = {}) {
     fileSize: bytes.length,
     chunkByteSize,
     totalChunks,
-    frames: [manifestFrame, ...chunkFrames]
+    payloadEncoding,
+    frames,
+    qrFrames,
+    estimatedStats
   };
 }
 
@@ -75,8 +134,9 @@ export class AnimatedQrSender extends SimpleEmitter {
   constructor(options = {}) {
     super();
     this.canvas = options.canvas ?? null;
-    this.frameIntervalMs = options.frameIntervalMs ?? 120;
-    this.chunkByteSize = options.chunkByteSize ?? 220;
+    this.frameIntervalMs = options.frameIntervalMs ?? DEFAULT_FRAME_INTERVAL_MS;
+    this.chunkByteSize = options.chunkByteSize ?? DEFAULT_CHUNK_BYTE_SIZE;
+    this.payloadEncoding = options.payloadEncoding ?? DEFAULT_PAYLOAD_ENCODING;
     this.qrOptions = {
       errorCorrectionLevel: "M",
       margin: 1,
@@ -99,7 +159,9 @@ export class AnimatedQrSender extends SimpleEmitter {
       chunkByteSize: options.chunkByteSize ?? this.chunkByteSize,
       sessionId: options.sessionId,
       fileName: options.fileName,
-      mimeType: options.mimeType
+      mimeType: options.mimeType,
+      payloadEncoding: options.payloadEncoding ?? this.payloadEncoding,
+      frameIntervalMs: options.frameIntervalMs ?? this.frameIntervalMs
     });
 
     this.prepared = transfer;
@@ -122,14 +184,15 @@ export class AnimatedQrSender extends SimpleEmitter {
 
     const length = this.prepared.frames.length;
     const safeIndex = ((frameIndex % length) + length) % length;
-    const frameText = this.prepared.frames[safeIndex];
-    await QRCode.toCanvas(this.canvas, frameText, this.qrOptions);
+    const qrFrame = this.prepared.qrFrames[safeIndex];
+    const frame = this.prepared.frames[safeIndex];
+    await QRCode.toCanvas(this.canvas, qrFrame, this.qrOptions);
     this.emit("frame", {
       frameIndex: safeIndex,
-      frameText,
+      frame,
       sessionId: this.prepared.sessionId
     });
-    return frameText;
+    return frame;
   }
 
   async start() {

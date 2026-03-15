@@ -3,6 +3,7 @@ import {
   PROTOCOL_MAGIC,
   encodeManifestFrame,
   encodeChunkFrame,
+  encodeChunkFrameBinary,
   parseFrame
 } from "../src/index.js";
 
@@ -45,6 +46,24 @@ describe("protocol", () => {
     expect(parsed?.chunkIndex).toBe(4);
     expect(parsed?.totalChunks).toBe(20);
     expect(parsed?.dataBase64Url).toBe("QUJDRA");
+    expect(Array.from(parsed?.dataBytes ?? [])).toEqual([65, 66, 67, 68]);
+  });
+
+  it("encodes and parses binary chunk frame", () => {
+    const frameBytes = encodeChunkFrameBinary({
+      sessionId: "session123",
+      chunkIndex: 2,
+      totalChunks: 20,
+      dataBytes: new Uint8Array([1, 2, 3, 255])
+    });
+
+    const parsed = parseFrame(frameBytes);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.type).toBe("chunk");
+    expect(parsed?.sessionId).toBe("session123");
+    expect(parsed?.chunkIndex).toBe(2);
+    expect(parsed?.totalChunks).toBe(20);
+    expect(Array.from(parsed?.dataBytes ?? [])).toEqual([1, 2, 3, 255]);
   });
 
   it("returns null for unrelated text", () => {

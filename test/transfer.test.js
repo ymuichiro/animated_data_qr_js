@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createTransferFrames,
-  AnimatedQrReceiver
+  AnimatedQrReceiver,
+  estimateTransferStats
 } from "../src/index.js";
 
 function createFakeFile(name, type, bytes) {
@@ -38,13 +39,14 @@ describe("transfer flow", () => {
     });
 
     for (const frame of transfer.frames) {
-      receiver.ingestFrameText(frame);
+      receiver.ingestFrame(frame);
     }
 
     expect(completed).not.toBeNull();
     expect(completed.sessionId).toBe("fixedsession");
     expect(completed.fileName).toBe("payload.txt");
     expect(completed.mimeType).toBe("text/plain");
+    expect(transfer.payloadEncoding).toBe("binary");
     const outputBytes = new Uint8Array(await completed.blob.arrayBuffer());
     expect(Array.from(outputBytes)).toEqual(Array.from(inputBytes));
   });
@@ -62,12 +64,25 @@ describe("transfer flow", () => {
       autoStopOnComplete: false
     });
 
-    receiver.ingestFrameText(transfer.frames[0]);
-    receiver.ingestFrameText(transfer.frames[1]);
-    receiver.ingestFrameText(transfer.frames[1]);
+    receiver.ingestFrame(transfer.frames[0]);
+    receiver.ingestFrame(transfer.frames[1]);
+    receiver.ingestFrame(transfer.frames[1]);
 
     const progress = receiver.getProgress("dup-session");
     expect(progress).not.toBeNull();
     expect(progress?.receivedChunks).toBe(1);
+  });
+
+  it("estimates loop duration and throughput", () => {
+    const stats = estimateTransferStats({
+      fileSize: 1024,
+      chunkByteSize: 256,
+      frameIntervalMs: 250
+    });
+
+    expect(stats.totalChunks).toBe(4);
+    expect(stats.totalFrames).toBe(5);
+    expect(stats.loopDurationMs).toBe(1250);
+    expect(stats.bytesPerSecond).toBeCloseTo(819.2, 1);
   });
 });
