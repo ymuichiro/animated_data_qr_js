@@ -52,13 +52,6 @@ function formatBytes(bytes) {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
-function formatRate(bytesPerSecond) {
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
-    return "0 B/s";
-  }
-  return `${formatBytes(bytesPerSecond)}/s`;
-}
-
 function formatDuration(ms) {
   if (!Number.isFinite(ms) || ms <= 0) {
     return "0s";
@@ -209,21 +202,16 @@ function renderPresetCard(presetName, preset) {
 function renderSenderEstimate({ file, presetName, preset, estimateTransferStats }) {
   const estimate = createEstimate({ file, presetName, preset, estimateTransferStats });
   if (!estimate) {
-    setText("fileName", "No file selected yet");
-    setText("fileSize", "Choose a file to see an estimate.");
-    setText("statLoop", "Waiting for file");
-    setText("statSpeed", "0 B/s");
-    setText("statFrames", "0 display frames");
-    setText("statChunks", "0 chunks");
+    setText("estimateHeadline", "Pick a file to see the expected loop time.");
+    setText("estimateDetail", "The sender stage opens in a focused modal so the main page stays compact.");
     return;
   }
 
-  setText("fileName", file.name || "Unnamed file");
-  setText("fileSize", `${formatBytes(file.size)} projected with ${PRESET_CONTENT[presetName]?.label || presetName}`);
-  setText("statLoop", formatDuration(estimate.loopDurationMs));
-  setText("statSpeed", formatRate(estimate.bytesPerSecond));
-  setText("statFrames", `${estimate.totalFrames} frames per loop`);
-  setText("statChunks", `${estimate.totalChunks} data chunks`);
+  setText("estimateHeadline", `Expected loop time: ${formatDuration(estimate.loopDurationMs)}`);
+  setText(
+    "estimateDetail",
+    `${file.name || "Unnamed file"}  |  ${formatBytes(file.size)}  |  ${PRESET_CONTENT[presetName]?.label || presetName} preset`
+  );
 }
 
 export function initSenderDemo({
@@ -236,9 +224,12 @@ export function initSenderDemo({
   const fileInput = byId("fileInput");
   const presetSelect = byId("presetSelect");
   const prepareBtn = byId("prepareBtn");
-  const startBtn = byId("startBtn");
-  const stopBtn = byId("stopBtn");
+  const openStageBtn = byId("openStageBtn");
   const canvas = byId("qrCanvas");
+  const stageDialog = byId("stageDialog");
+  const stageCloseBtn = byId("stageCloseBtn");
+  const modalStartBtn = byId("modalStartBtn");
+  const modalStopBtn = byId("modalStopBtn");
 
   const sender = new AnimatedQrSender({
     canvas,
@@ -254,6 +245,17 @@ export function initSenderDemo({
     running: false
   };
 
+  function openStageDialog() {
+    openDialog(stageDialog);
+  }
+
+  function closeStageDialog() {
+    if (state.running) {
+      sender.stop();
+    }
+    closeDialog(stageDialog);
+  }
+
   function getCurrentPreset() {
     const presetName = presetSelect?.value || "balanced";
     return {
@@ -266,16 +268,21 @@ export function initSenderDemo({
     if (prepareBtn) {
       prepareBtn.disabled = !state.file;
     }
-    if (startBtn) {
-      startBtn.disabled = !state.prepared || state.running;
+    if (openStageBtn) {
+      openStageBtn.disabled = !state.prepared;
     }
-    if (stopBtn) {
-      stopBtn.disabled = !state.running && !state.prepared;
+    if (modalStartBtn) {
+      modalStartBtn.disabled = !state.prepared || state.running;
+    }
+    if (modalStopBtn) {
+      modalStopBtn.disabled = !state.running;
     }
   }
 
   function markNeedsPrepare(reason = "Choose a file and prepare a transfer.") {
     state.prepared = false;
+    closeDialog(stageDialog);
+    setText("stageMeta", "Prepare a transfer to preview the sender screen here.");
     if (!state.running) {
       const tone = state.file ? "warning" : "idle";
       const title = state.file ? "Ready to prepare" : "Select a file";
@@ -304,21 +311,21 @@ export function initSenderDemo({
     state.prepared = true;
     state.running = false;
     setText("stageMeta", `Prepared ${payload.displayFrames.length} display frames for ${payload.fileName}`);
-    setText("statLoop", formatDuration(payload.estimatedStats.loopDurationMs));
-    setText("statSpeed", formatRate(payload.estimatedStats.bytesPerSecond));
-    setText("statFrames", `${payload.estimatedStats.totalFrames} frames per loop`);
-    setText("statChunks", `${payload.totalChunks} data chunks`);
+    setText("estimateHeadline", `Expected loop time: ${formatDuration(payload.estimatedStats.loopDurationMs)}`);
+    setText("estimateDetail", `${payload.fileName}  |  ${formatBytes(payload.fileSize)}  |  ${payload.totalChunks} chunks`);
     setStatus({
       tone: "ready",
       title: "Transfer prepared",
-      detail: "Start the broadcast when the receiver is already scanning.",
+      detail: "Open the QR stage and start the broadcast when the receiver is already scanning.",
       legacy: `prepared: ${payload.fileName}`
     });
+    void sender.renderFrameAt(0).catch(() => {});
     syncButtonState();
   });
 
   sender.on("start", ({ frameCount }) => {
     state.running = true;
+    openStageDialog();
     setText("stageMeta", `Broadcasting across ${frameCount} display frames`);
     setStatus({
       tone: "live",
@@ -358,6 +365,9 @@ export function initSenderDemo({
   });
 
   fileInput?.addEventListener("change", () => {
+    if (state.running) {
+      sender.stop();
+    }
     state.file = fileInput.files?.[0] || null;
     renderSelectedPreset();
     markNeedsPrepare(
@@ -429,12 +439,12 @@ export function initSenderDemo({
     }
   });
 
-  startBtn?.addEventListener("click", async () => {
+  async function startBroadcast() {
     if (!state.prepared) {
       setStatus({
         tone: "warning",
         title: "Prepare first",
-        detail: "Prepare the selected file before starting the QR broadcast.",
+        detail: "Prepare the selected file before opening the QR broadcast stage.",
         legacy: "status: prepare first"
       });
       return;
@@ -450,14 +460,41 @@ export function initSenderDemo({
         legacy: `error: ${error?.message || String(error)}`
       });
     }
+  }
+
+  function stopBroadcast() {
+    sender.stop();
+  }
+
+  openStageBtn?.addEventListener("click", () => {
+    openStageDialog();
   });
 
-  stopBtn?.addEventListener("click", () => {
-    sender.stop();
+  modalStartBtn?.addEventListener("click", () => {
+    void startBroadcast();
+  });
+
+  modalStopBtn?.addEventListener("click", () => {
+    stopBroadcast();
+  });
+
+  stageCloseBtn?.addEventListener("click", () => {
+    closeStageDialog();
+  });
+
+  stageDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeStageDialog();
+  });
+
+  stageDialog?.addEventListener("click", (event) => {
+    if (event.target === stageDialog) {
+      closeStageDialog();
+    }
   });
 
   renderSelectedPreset();
-  setText("stageMeta", "The QR stage will appear here after you prepare a transfer.");
+  setText("stageMeta", "Prepare a transfer to preview the sender screen here.");
   setStatus({
     tone: "idle",
     title: "Select a file",

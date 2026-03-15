@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="../assets/demo.css" />
   </head>
   <body>
-    <div class="shell">
+    <div class="shell shell--compact">
       <header class="site-header">
         <div class="header-left">
           <a class="brand" href="../">
@@ -28,132 +28,120 @@
         </div>
       </header>
 
-      <main class="page-grid page-grid--split">
-        <section class="panel control-stack">
-          <div class="hero">
-            <span class="eyebrow">Send a file</span>
-            <h1 class="hero-title">Prepare a QR broadcast in two simple choices.</h1>
-            <p class="hero-copy">
-              Select the file, pick the preset, and let the demo choose the chunk size, QR density, and recovery behavior automatically.
+      <main class="page-grid">
+        <section class="panel panel--compact control-stack">
+          <div class="compact-hero">
+            <div>
+              <span class="eyebrow">Send a file</span>
+              <h1 class="compact-title">Prepare a QR broadcast without leaving this screen.</h1>
+            </div>
+            <p class="compact-copy">
+              Choose a file and preset here. The QR stage opens only when needed in a focused modal.
             </p>
           </div>
 
-          <div>
-            <label class="control-label" for="fileInput">File</label>
-            <div class="input-shell">
-              <input id="fileInput" type="file" />
-            </div>
-          </div>
-
-          <div>
-            <label class="control-label" for="presetSelect">Transfer preset</label>
-            <div class="select-shell">
-              <select id="presetSelect">
-                <option value="compatibility">Compatibility</option>
-                <option value="balanced" selected>Balanced</option>
-                <option value="throughput">Throughput</option>
-                <option value="resilient">Resilient</option>
-              </select>
-              <span class="muted">Advanced tuning stays hidden here so the demo remains easy to operate.</span>
-            </div>
-          </div>
-
-          <section class="preset-card" aria-live="polite">
-            <div class="preset-header">
+          <div class="sender-grid">
+            <div class="control-stack">
               <div>
-                <span class="section-label">Selected preset</span>
-                <h2 id="presetTitle" class="preset-title">Balanced</h2>
+                <label class="control-label" for="fileInput">File</label>
+                <div class="input-shell">
+                  <input id="fileInput" type="file" />
+                </div>
               </div>
-              <span id="presetTag" class="preset-tag">Default choice</span>
-            </div>
-            <p id="presetDescription" class="copy"></p>
-            <div class="metric-grid">
-              <div class="metric">
-                <span class="metric-label">Frame pace</span>
-                <div id="presetMetricPace" class="metric-value"></div>
-                <p id="presetMetricPaceCaption" class="metric-caption"></p>
-              </div>
-              <div class="metric">
-                <span class="metric-label">QR density</span>
-                <div id="presetMetricDensity" class="metric-value"></div>
-                <p id="presetMetricDensityCaption" class="metric-caption"></p>
-              </div>
-              <div class="metric">
-                <span class="metric-label">Protection</span>
-                <div id="presetMetricProtection" class="metric-value"></div>
-                <p id="presetMetricProtectionCaption" class="metric-caption"></p>
-              </div>
-            </div>
-          </section>
 
-          <div class="summary-card">
-            <span class="section-label">Estimate</span>
-            <div class="stats-grid">
-              <div class="stat-card">
-                <h3 id="fileName">No file selected yet</h3>
-                <p id="fileSize">Choose a file to see an estimate.</p>
+              <div>
+                <label class="control-label" for="presetSelect">Transfer preset</label>
+                <div class="select-shell">
+                  <select id="presetSelect">
+                    <option value="compatibility">Compatibility</option>
+                    <option value="balanced" selected>Balanced</option>
+                    <option value="throughput">Throughput</option>
+                    <option value="resilient">Resilient</option>
+                  </select>
+                  <span class="muted">Low-level parameters stay hidden so the demo remains easy to operate.</span>
+                </div>
               </div>
-              <div class="stat-card">
-                <h3 id="statLoop">Waiting for file</h3>
-                <p>Projected time for one complete loop.</p>
-              </div>
-              <div class="stat-card">
-                <h3 id="statSpeed">0 B/s</h3>
-                <p>Approximate payload throughput under ideal scanning.</p>
-              </div>
-              <div class="stat-card">
-                <h3 id="statFrames">0 display frames</h3>
-                <p>Total animated QR frames in one loop.</p>
-              </div>
-              <div class="stat-card">
-                <h3 id="statChunks">0 chunks</h3>
-                <p>Number of data chunks the receiver needs to reconstruct.</p>
+
+              <div class="action-row action-row--compact">
+                <button id="prepareBtn" class="button button-primary" type="button">Prepare transfer</button>
+                <button id="openStageBtn" class="button button-secondary" type="button">Open QR stage</button>
               </div>
             </div>
-          </div>
 
-          <div id="statusCard" class="status-card" data-tone="idle">
-            <div class="status-topline">
-              <span class="status-dot" aria-hidden="true"></span>
-              <h2 id="statusTitle" class="status-title">Select a file</h2>
-            </div>
-            <p id="statusDetail" class="status-detail">Choose a file and preset, then prepare the transfer.</p>
-            <p id="status" class="status-legacy">status: idle</p>
-          </div>
+            <div class="control-stack">
+              <section class="preset-card preset-card--compact" aria-live="polite">
+                <div class="preset-header">
+                  <div>
+                    <span class="section-label">Selected preset</span>
+                    <h2 id="presetTitle" class="preset-title">Balanced</h2>
+                  </div>
+                  <span id="presetTag" class="preset-tag">Default choice</span>
+                </div>
+                <p id="presetDescription" class="copy"></p>
+                <div class="metric-grid metric-grid--compact">
+                  <div class="metric metric--compact">
+                    <span class="metric-label">Frame pace</span>
+                    <div id="presetMetricPace" class="metric-value"></div>
+                    <p id="presetMetricPaceCaption" class="metric-caption"></p>
+                  </div>
+                  <div class="metric metric--compact">
+                    <span class="metric-label">QR density</span>
+                    <div id="presetMetricDensity" class="metric-value"></div>
+                    <p id="presetMetricDensityCaption" class="metric-caption"></p>
+                  </div>
+                  <div class="metric metric--compact">
+                    <span class="metric-label">Protection</span>
+                    <div id="presetMetricProtection" class="metric-value"></div>
+                    <p id="presetMetricProtectionCaption" class="metric-caption"></p>
+                  </div>
+                </div>
+              </section>
 
-          <div class="action-row">
-            <button id="prepareBtn" class="button button-primary" type="button">Prepare transfer</button>
-            <button id="startBtn" class="button button-secondary" type="button">Start broadcast</button>
-            <button id="stopBtn" class="button button-ghost" type="button">Stop</button>
-          </div>
+              <div class="summary-card estimate-inline">
+                <span class="section-label">Estimate</span>
+                <h2 id="estimateHeadline" class="estimate-title">Pick a file to see the expected loop time.</h2>
+                <p id="estimateDetail" class="status-detail">The sender stage opens in a focused modal so the main page stays compact.</p>
+              </div>
 
-          <div class="badge-row">
-            <span class="note-chip">Tip: use maximum screen brightness on the sender.</span>
-            <span class="note-chip">Start the receiver before the first broadcast loop.</span>
-          </div>
-        </section>
-
-        <section class="panel stage-grid">
-          <div class="canvas-card">
-            <div class="canvas-frame">
-              <canvas id="qrCanvas"></canvas>
-            </div>
-            <p id="stageMeta" class="canvas-caption">The QR stage will appear here after you prepare a transfer.</p>
-          </div>
-
-          <div class="tip-grid">
-            <div class="tip-card">
-              <h3>Recommended flow</h3>
-              <p>Prepare the transfer first, then begin the broadcast only after the receiver camera is already pointed at the display.</p>
-            </div>
-            <div class="tip-card">
-              <h3>For mobile screens</h3>
-              <p>If the camera struggles, step down to <strong>Compatibility</strong> or <strong>Resilient</strong> and keep the display flat to reduce reflections.</p>
+              <div id="statusCard" class="status-card" data-tone="idle">
+                <div class="status-topline">
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <h2 id="statusTitle" class="status-title">Select a file</h2>
+                </div>
+                <p id="statusDetail" class="status-detail">Choose a file and preset, then prepare the transfer.</p>
+                <p id="status" class="status-legacy">status: idle</p>
+              </div>
             </div>
           </div>
         </section>
       </main>
     </div>
+
+    <dialog id="stageDialog" class="dialog dialog--stage" aria-labelledby="stageTitle">
+      <div class="dialog-body dialog-body--stage">
+        <div class="dialog-header">
+          <div>
+            <span class="kicker">QR stage</span>
+            <h2 id="stageTitle" class="dialog-title">Display the sender screen</h2>
+          </div>
+          <button id="stageCloseBtn" class="dialog-close" type="button" aria-label="Close QR stage">&times;</button>
+        </div>
+
+        <div class="canvas-card canvas-card--modal">
+          <div class="canvas-frame canvas-frame--modal">
+            <canvas id="qrCanvas"></canvas>
+          </div>
+          <p id="stageMeta" class="canvas-caption">Prepare a transfer to preview the sender screen here.</p>
+        </div>
+
+        <div class="action-row action-row--stage">
+          <button id="modalStartBtn" class="button button-primary" type="button">Start broadcast</button>
+          <button id="modalStopBtn" class="button button-ghost" type="button">Stop</button>
+        </div>
+
+        <p class="copy">Use full brightness and keep this modal open while the receiver is scanning.</p>
+      </div>
+    </dialog>
 
     <dialog id="helpDialog" class="dialog" aria-labelledby="helpTitle">
       <div class="dialog-body">
@@ -166,14 +154,11 @@
         </div>
         <ol class="help-list">
           <li>Select the file you want to share.</li>
-          <li>Choose a preset based on your environment. The preset automatically sets density, speed, and recovery.</li>
-          <li>Press <strong>Prepare transfer</strong> to generate the animated QR loop.</li>
-          <li>Once the receiver is already scanning, press <strong>Start broadcast</strong>.</li>
-          <li>Keep the sender bright, centered, and stable until the receiver reports completion.</li>
+          <li>Choose the preset that matches your environment.</li>
+          <li>Press <strong>Prepare transfer</strong>.</li>
+          <li>Open the QR stage modal and start the broadcast once the receiver is already scanning.</li>
+          <li>Keep the modal visible until the receiver finishes.</li>
         </ol>
-        <p class="copy">
-          The demo hides low-level tuning on purpose. If scanning is difficult, switch the preset instead of adjusting manual parameters.
-        </p>
       </div>
     </dialog>
 
