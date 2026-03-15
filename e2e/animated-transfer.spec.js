@@ -199,3 +199,89 @@ test("multi-QR transfer completes in browser runtime", async ({ page }) => {
   expect(result.mimeType).toBe("text/plain");
   expect(result.totalChunks).toBeGreaterThan(1);
 });
+
+test("sender demo prepares the transfer when opening the QR stage", async ({ page }) => {
+  await page.goto("/examples/sender.html");
+
+  await expect(page.locator("#prepareBtn")).toHaveCount(0);
+
+  await page.locator("#fileInput").setInputFiles({
+    name: "demo-transfer.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("sender demo payload ".repeat(40), "utf8")
+  });
+
+  await page.locator("#openStageBtn").click();
+
+  await expect(page.locator("#stageDialog")).toBeVisible();
+  await expect(page.locator("#statusTitle")).toHaveText("Transfer prepared");
+
+  const canvasInfo = await page.locator("#qrCanvas").evaluate((canvas) => {
+    const context = canvas.getContext("2d");
+    const imageData = context?.getImageData(0, 0, canvas.width, canvas.height).data ?? [];
+    let darkPixels = 0;
+    for (let index = 0; index < imageData.length; index += 4) {
+      if (imageData[index] < 240 || imageData[index + 1] < 240 || imageData[index + 2] < 240) {
+        darkPixels += 1;
+      }
+    }
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      darkPixels
+    };
+  });
+
+  expect(canvasInfo.width).toBeGreaterThan(300);
+  expect(canvasInfo.height).toBeGreaterThan(150);
+  expect(canvasInfo.darkPixels).toBeGreaterThan(500);
+});
+
+test("receiver demo uses a full-width mobile scan modal", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 640;
+          canvas.height = 360;
+          const context = canvas.getContext("2d");
+          context.fillStyle = "#05070b";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.fillStyle = "#ffffff";
+          context.fillRect(120, 40, 400, 280);
+          return canvas.captureStream(30);
+        }
+      }
+    });
+  });
+
+  await page.setViewportSize({
+    width: 390,
+    height: 844
+  });
+  await page.goto("/examples/receiver.html");
+
+  await page.locator("#openScanStageBtn").click();
+
+  await expect(page.locator("#scanDialog")).toBeVisible();
+  await expect(page.locator("#statusTitle")).toHaveText("Scanning in progress");
+
+  const layout = await page.locator("#scanDialog").evaluate((dialog) => {
+    const rect = dialog.getBoundingClientRect();
+    const video = dialog.querySelector("#video");
+    const videoRect = video?.getBoundingClientRect();
+    return {
+      dialogWidth: rect.width,
+      dialogHeight: rect.height,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      videoWidth: videoRect?.width ?? 0
+    };
+  });
+
+  expect(layout.dialogWidth).toBeGreaterThanOrEqual(layout.viewportWidth - 1);
+  expect(layout.dialogHeight).toBeGreaterThanOrEqual(layout.viewportHeight - 1);
+  expect(layout.videoWidth / layout.viewportWidth).toBeGreaterThan(0.85);
+});

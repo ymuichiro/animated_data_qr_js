@@ -36,7 +36,7 @@
               <h1 class="compact-title">Open the scan stage only when the sender is ready.</h1>
             </div>
             <p class="compact-copy">
-              The camera view and live transfer progress stay inside a focused modal, while the main page stays clean and easy to monitor.
+              The camera view and live transfer progress stay inside a full-width scan modal, while the main page stays clean and easy to monitor.
             </p>
           </div>
 
@@ -44,8 +44,8 @@
             <div class="control-stack">
               <div class="summary-card estimate-inline">
                 <span class="section-label">Scan stage</span>
-                <h2 class="estimate-title">Launch the camera only when you are ready to scan.</h2>
-                <p class="status-detail">Open the scan stage to start the camera, watch progress, and stop scanning.</p>
+                <h2 class="estimate-title">Launch the camera and progress view only when you are ready to scan.</h2>
+                <p class="status-detail">Open the scan stage to start the camera immediately, watch progress, and stop scanning.</p>
               </div>
 
               <div class="action-row action-row--compact">
@@ -92,7 +92,7 @@
           <div class="video-frame video-frame--modal">
             <video id="video" autoplay muted playsinline></video>
           </div>
-          <p id="stageMeta" class="video-caption">Open the scan stage, then start the camera when the sender is ready.</p>
+          <p id="stageMeta" class="video-caption">Open the scan stage to start the camera and watch live progress.</p>
         </div>
 
         <div class="summary-card progress-shell progress-shell--modal">
@@ -104,7 +104,7 @@
         </div>
 
         <div class="action-row action-row--stage">
-          <button id="startBtn" class="button button-primary" type="button">Start camera and scan</button>
+          <button id="startBtn" class="button button-primary" type="button">Restart scan</button>
           <button id="stopBtn" class="button button-ghost" type="button">Stop</button>
         </div>
       </div>
@@ -121,7 +121,7 @@
         </div>
         <ol class="help-list">
           <li>Open the scan stage when the sender is ready.</li>
-          <li>Press <strong>Start camera and scan</strong> inside the modal and allow camera access.</li>
+          <li>Allow camera access as soon as the scan stage opens.</li>
           <li>Keep the full sender screen inside the frame.</li>
           <li>Watch the live progress in the modal until the main page shows the download action.</li>
         </ol>

@@ -22,7 +22,8 @@ The current demo UI is designed to be:
 - preset-first, with low-level transfer tuning hidden by default
 - mobile-friendly and responsive
 - easy to operate during live demos
-- QR sender and receiver stages shown in focused modals
+- sender and receiver stages shown in focused modals
+- full-width mobile scan modal for the receiver camera
 - suitable for GitHub Pages hosting
 
 GitHub Pages source files live in [`docs/`](./docs).
@@ -120,6 +121,12 @@ Each preset shows supplemental guidance in the UI:
 - how much recovery protection it applies
 
 The sender and receiver pages also include a help button that explains the operational flow in the browser.
+
+Current demo flow:
+
+- the sender prepares the transfer automatically when you open the QR stage
+- the receiver starts camera scanning as soon as you open the scan stage
+- live receive progress stays inside the receiver modal while the main page remains compact
 
 ## Transfer Tuning
 

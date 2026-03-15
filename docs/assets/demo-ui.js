@@ -203,7 +203,7 @@ function renderSenderEstimate({ file, presetName, preset, estimateTransferStats 
   const estimate = createEstimate({ file, presetName, preset, estimateTransferStats });
   if (!estimate) {
     setText("estimateHeadline", "Pick a file to see the expected loop time.");
-    setText("estimateDetail", "The sender stage opens in a focused modal so the main page stays compact.");
+    setText("estimateDetail", "Opening the QR stage prepares the transfer only when you need it.");
     return;
   }
 
@@ -223,7 +223,6 @@ export function initSenderDemo({
 
   const fileInput = byId("fileInput");
   const presetSelect = byId("presetSelect");
-  const prepareBtn = byId("prepareBtn");
   const openStageBtn = byId("openStageBtn");
   const canvas = byId("qrCanvas");
   const stageDialog = byId("stageDialog");
@@ -241,6 +240,7 @@ export function initSenderDemo({
 
   const state = {
     file: null,
+    preparing: false,
     prepared: false,
     running: false
   };
@@ -270,27 +270,26 @@ export function initSenderDemo({
   }
 
   function syncButtonState() {
-    if (prepareBtn) {
-      prepareBtn.disabled = !state.file;
-    }
     if (openStageBtn) {
-      openStageBtn.disabled = !state.prepared;
+      openStageBtn.disabled = !state.file || state.preparing;
     }
     if (modalStartBtn) {
-      modalStartBtn.disabled = !state.prepared || state.running;
+      modalStartBtn.disabled = !state.file || state.preparing || state.running;
     }
     if (modalStopBtn) {
       modalStopBtn.disabled = !state.running;
     }
   }
 
-  function markNeedsPrepare(reason = "Choose a file and prepare a transfer.") {
+  function markNeedsPrepare(reason = "Choose a file and open the QR stage.") {
+    state.preparing = false;
     state.prepared = false;
-    closeDialog(stageDialog);
-    setText("stageMeta", "Prepare a transfer to preview the sender screen here.");
+    setText("stageMeta", state.file
+      ? "Open the QR stage to prepare the transfer and preview the sender screen."
+      : "Choose a file, then open the QR stage when you are ready.");
     if (!state.running) {
       const tone = state.file ? "warning" : "idle";
-      const title = state.file ? "Ready to prepare" : "Select a file";
+      const title = state.file ? "Ready to open the stage" : "Select a file";
       setStatus({
         tone,
         title,
@@ -312,7 +311,73 @@ export function initSenderDemo({
     });
   }
 
+  async function prepareTransfer({ openStageAfter = false } = {}) {
+    if (!state.file) {
+      setStatus({
+        tone: "warning",
+        title: "Select a file",
+        detail: "A file is required before the QR stage can be prepared.",
+        legacy: "status: select a file"
+      });
+      return false;
+    }
+
+    const { presetName, preset } = getCurrentPreset();
+    renderPresetCard(presetName, preset);
+
+    if (state.running) {
+      sender.stop();
+    }
+
+    sender.chunkByteSize = preset.chunkByteSize;
+    sender.frameIntervalMs = preset.frameIntervalMs;
+    sender.payloadEncoding = preset.payloadEncoding;
+    sender.symbolsPerFrame = preset.symbolsPerFrame;
+    sender.parityBlockDataChunks = preset.parityBlockDataChunks;
+    sender.qrOptions.errorCorrectionLevel = preset.qrOptions.errorCorrectionLevel;
+
+    state.preparing = true;
+    state.prepared = false;
+    syncButtonState();
+
+    if (openStageAfter) {
+      openStageDialog();
+    }
+
+    setText("stageMeta", "Preparing QR frames and estimating the expected loop time...");
+    setStatus({
+      tone: "working",
+      title: "Preparing transfer",
+      detail: "Splitting the file into QR frames and calculating the loop estimate.",
+      legacy: "status: preparing"
+    });
+
+    try {
+      await sender.prepare(state.file, {
+        chunkByteSize: preset.chunkByteSize,
+        payloadEncoding: preset.payloadEncoding,
+        symbolsPerFrame: preset.symbolsPerFrame,
+        parityBlockDataChunks: preset.parityBlockDataChunks,
+        frameIntervalMs: preset.frameIntervalMs
+      });
+      return true;
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        title: "Preparation failed",
+        detail: error?.message || String(error),
+        legacy: `error: ${error?.message || String(error)}`
+      });
+      setText("stageMeta", "Preparation failed. Choose another file or preset and try again.");
+      return false;
+    } finally {
+      state.preparing = false;
+      syncButtonState();
+    }
+  }
+
   sender.on("prepared", (payload) => {
+    state.preparing = false;
     state.prepared = true;
     state.running = false;
     setText("stageMeta", `Prepared ${payload.displayFrames.length} display frames for ${payload.fileName}`);
@@ -321,7 +386,7 @@ export function initSenderDemo({
     setStatus({
       tone: "ready",
       title: "Transfer prepared",
-      detail: "Open the QR stage and start the broadcast when the receiver is already scanning.",
+      detail: "The QR stage is ready. Start the broadcast when the receiver is already scanning.",
       legacy: `prepared: ${payload.fileName}`
     });
     void sender.renderFrameAt(0).catch(() => {});
@@ -352,13 +417,14 @@ export function initSenderDemo({
       title: state.prepared ? "Broadcast stopped" : "Select a file",
       detail: state.prepared
         ? "You can start again immediately or prepare a different file."
-        : "Choose a file and prepare a transfer.",
+        : "Choose a file and open the QR stage.",
       legacy: "status: stopped"
     });
     syncButtonState();
   });
 
   sender.on("error", ({ error }) => {
+    state.preparing = false;
     state.running = false;
     setStatus({
       tone: "error",
@@ -377,7 +443,7 @@ export function initSenderDemo({
     renderSelectedPreset();
     markNeedsPrepare(
       state.file
-        ? "The selected file is ready. Prepare a transfer to generate the QR loop."
+        ? "The selected file is ready. Open the QR stage to generate the QR loop."
         : "Choose a file to continue."
     );
   });
@@ -389,70 +455,17 @@ export function initSenderDemo({
     }
     markNeedsPrepare(
       state.file
-        ? "Preset updated. Prepare again to apply the new transfer profile."
+        ? "Preset updated. Open the QR stage again to apply the new transfer profile."
         : "Choose a file to see the preset estimate."
     );
   });
 
-  prepareBtn?.addEventListener("click", async () => {
-    if (!state.file) {
-      setStatus({
-        tone: "warning",
-        title: "Select a file",
-        detail: "A file is required before the transfer can be prepared.",
-        legacy: "status: select a file"
-      });
-      return;
-    }
-
-    const { presetName, preset } = getCurrentPreset();
-    renderPresetCard(presetName, preset);
-
-    if (state.running) {
-      sender.stop();
-    }
-
-    sender.chunkByteSize = preset.chunkByteSize;
-    sender.frameIntervalMs = preset.frameIntervalMs;
-    sender.payloadEncoding = preset.payloadEncoding;
-    sender.symbolsPerFrame = preset.symbolsPerFrame;
-    sender.parityBlockDataChunks = preset.parityBlockDataChunks;
-    sender.qrOptions.errorCorrectionLevel = preset.qrOptions.errorCorrectionLevel;
-
-    setStatus({
-      tone: "working",
-      title: "Preparing transfer",
-      detail: "Splitting the file into QR frames and calculating the loop estimate.",
-      legacy: "status: preparing"
-    });
-
-    try {
-      await sender.prepare(state.file, {
-        chunkByteSize: preset.chunkByteSize,
-        payloadEncoding: preset.payloadEncoding,
-        symbolsPerFrame: preset.symbolsPerFrame,
-        parityBlockDataChunks: preset.parityBlockDataChunks,
-        frameIntervalMs: preset.frameIntervalMs
-      });
-    } catch (error) {
-      setStatus({
-        tone: "error",
-        title: "Preparation failed",
-        detail: error?.message || String(error),
-        legacy: `error: ${error?.message || String(error)}`
-      });
-    }
-  });
-
   async function startBroadcast() {
     if (!state.prepared) {
-      setStatus({
-        tone: "warning",
-        title: "Prepare first",
-        detail: "Prepare the selected file before opening the QR broadcast stage.",
-        legacy: "status: prepare first"
-      });
-      return;
+      const prepared = await prepareTransfer({ openStageAfter: true });
+      if (!prepared) {
+        return;
+      }
     }
 
     try {
@@ -471,12 +484,27 @@ export function initSenderDemo({
     sender.stop();
   }
 
-  openStageBtn?.addEventListener("click", () => {
+  openStageBtn?.addEventListener("click", async () => {
+    if (!state.file) {
+      setStatus({
+        tone: "warning",
+        title: "Select a file",
+        detail: "Choose a file before opening the QR stage.",
+        legacy: "status: select a file"
+      });
+      return;
+    }
+
+    if (!state.prepared) {
+      await prepareTransfer({ openStageAfter: true });
+      return;
+    }
+
     openStageDialog();
   });
 
-  modalStartBtn?.addEventListener("click", () => {
-    void startBroadcast();
+  modalStartBtn?.addEventListener("click", async () => {
+    await startBroadcast();
   });
 
   modalStopBtn?.addEventListener("click", () => {
@@ -499,11 +527,11 @@ export function initSenderDemo({
   });
 
   renderSelectedPreset();
-  setText("stageMeta", "Prepare a transfer to preview the sender screen here.");
+  setText("stageMeta", "Choose a file, then open the QR stage when you are ready.");
   setStatus({
     tone: "idle",
     title: "Select a file",
-    detail: "Choose a file and preset, then prepare the transfer.",
+    detail: "Choose a file and preset, then open the QR stage.",
     legacy: "status: idle"
   });
   syncButtonState();
@@ -526,9 +554,27 @@ export function initReceiverDemo({
 
   const receiver = new AnimatedQrReceiver({
     video,
-    scanIntervalMs: 100,
+    scanIntervalMs: 45,
     maxSymbolsPerFrame: 4,
-    autoStopOnComplete: true
+    autoStopOnComplete: true,
+    cameraConstraints: {
+      audio: false,
+      video: {
+        facingMode: {
+          ideal: "environment"
+        },
+        width: {
+          ideal: 1280
+        },
+        height: {
+          ideal: 720
+        },
+        frameRate: {
+          ideal: 30,
+          max: 30
+        }
+      }
+    }
   });
 
   function openScanDialog() {
@@ -543,7 +589,7 @@ export function initReceiverDemo({
 
   function syncButtons(scanning) {
     if (openScanStageBtn) {
-      openScanStageBtn.disabled = false;
+      openScanStageBtn.disabled = Boolean(scanning);
     }
     if (startBtn) {
       startBtn.disabled = Boolean(scanning);
@@ -562,6 +608,56 @@ export function initReceiverDemo({
       URL.revokeObjectURL(downloadUrl);
       downloadUrl = null;
     }
+  }
+
+  function resetProgressUi() {
+    hideDownload();
+    receiver.reset();
+    setText("manifestName", "Waiting for sender manifest");
+    setText("manifestMeta", "The file details will appear here once the first manifest is read.");
+
+    const progressBar = byId("progressBar");
+    const progressText = byId("progressText");
+    if (progressBar) {
+      progressBar.style.width = "0%";
+    }
+    if (progressText) {
+      progressText.textContent = "0%  |  No chunks received yet";
+    }
+  }
+
+  async function startScanFlow() {
+    openScanDialog();
+    resetProgressUi();
+    setText("stageMeta", "Requesting camera access and preparing the scan stage...");
+    setStatus({
+      tone: "working",
+      title: "Starting camera",
+      detail: "Allow camera access, then keep the full sender stage inside the frame.",
+      legacy: "status: starting camera"
+    });
+
+    try {
+      await receiver.start();
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        title: "Camera access failed",
+        detail: error?.message || String(error),
+        legacy: `error: ${error?.message || String(error)}`
+      });
+      setText("stageMeta", "Camera access failed. Adjust permissions and try again.");
+      syncButtons(false);
+    }
+  }
+
+  function setReceiverStoppedStatus(detail = "You can start scanning again whenever you are ready.") {
+    setStatus({
+      tone: "idle",
+      title: "Receiver stopped",
+      detail,
+      legacy: "status: stopped"
+    });
   }
 
   receiver.on("camera-start", () => {
@@ -585,6 +681,9 @@ export function initReceiverDemo({
   });
 
   receiver.on("camera-stop", () => {
+    if (!receiver.scanning) {
+      setText("stageMeta", "Scan stopped. Open the scan stage again when the sender is ready.");
+    }
     syncButtons(false);
   });
 
@@ -665,65 +764,42 @@ export function initReceiverDemo({
   });
 
   openScanStageBtn?.addEventListener("click", () => {
-    openScanDialog();
+    void startScanFlow();
   });
 
-  startBtn?.addEventListener("click", async () => {
-    hideDownload();
-    receiver.reset();
-    setText("manifestName", "Waiting for sender manifest");
-    setText("manifestMeta", "The file details will appear here once the first manifest is read.");
-    const progressBar = byId("progressBar");
-    const progressText = byId("progressText");
-    if (progressBar) {
-      progressBar.style.width = "0%";
-    }
-    if (progressText) {
-      progressText.textContent = "0%  |  No chunks received yet";
-    }
-
-    try {
-      await receiver.start();
-    } catch (error) {
-      setStatus({
-        tone: "error",
-        title: "Camera access failed",
-        detail: error?.message || String(error),
-        legacy: `error: ${error?.message || String(error)}`
-      });
-    }
+  startBtn?.addEventListener("click", () => {
+    void startScanFlow();
   });
 
   stopBtn?.addEventListener("click", () => {
     closeScanDialog();
-    setStatus({
-      tone: "idle",
-      title: "Receiver stopped",
-      detail: "You can start scanning again whenever you are ready.",
-      legacy: "status: stopped"
-    });
+    setReceiverStoppedStatus();
+    setText("stageMeta", "Scan stopped. Open the scan stage again when the sender is ready.");
     syncButtons(false);
   });
 
   scanCloseBtn?.addEventListener("click", () => {
     closeScanDialog();
+    setReceiverStoppedStatus("The scan stage was closed. Reopen it when the sender is ready.");
   });
 
   scanDialog?.addEventListener("cancel", (event) => {
     event.preventDefault();
     closeScanDialog();
+    setReceiverStoppedStatus("The scan stage was closed. Reopen it when the sender is ready.");
   });
 
   scanDialog?.addEventListener("click", (event) => {
     if (event.target === scanDialog) {
       closeScanDialog();
+      setReceiverStoppedStatus("The scan stage was closed. Reopen it when the sender is ready.");
     }
   });
 
   hideDownload();
   setText("manifestName", "Waiting for sender manifest");
   setText("manifestMeta", "The file details will appear here once the first manifest is read.");
-  setText("stageMeta", "Open the scan stage, then start the camera when the sender is ready.");
+  setText("stageMeta", "Open the scan stage to start the camera and watch live progress.");
   const progressText = byId("progressText");
   if (progressText) {
     progressText.textContent = "0%  |  No chunks received yet";
@@ -731,7 +807,7 @@ export function initReceiverDemo({
   setStatus({
     tone: "idle",
     title: "Start the receiver",
-    detail: "Open the sender on another screen and begin scanning when it is ready.",
+    detail: "Open the sender on another screen, then launch the scan stage when it is ready.",
     legacy: "status: idle"
   });
   syncButtons(false);

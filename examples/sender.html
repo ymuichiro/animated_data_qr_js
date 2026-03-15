@@ -36,7 +36,7 @@
               <h1 class="compact-title">Prepare a QR broadcast without leaving this screen.</h1>
             </div>
             <p class="compact-copy">
-              Choose a file and preset here. The QR stage opens only when needed in a focused modal.
+              Choose a file and preset here. Opening the QR stage prepares the transfer automatically in a focused modal.
             </p>
           </div>
 
@@ -63,8 +63,7 @@
               </div>
 
               <div class="action-row action-row--compact">
-                <button id="prepareBtn" class="button button-primary" type="button">Prepare transfer</button>
-                <button id="openStageBtn" class="button button-secondary" type="button">Open QR stage</button>
+                <button id="openStageBtn" class="button button-primary" type="button">Open QR stage</button>
               </div>
             </div>
 
@@ -100,7 +99,7 @@
               <div class="summary-card estimate-inline">
                 <span class="section-label">Estimate</span>
                 <h2 id="estimateHeadline" class="estimate-title">Pick a file to see the expected loop time.</h2>
-                <p id="estimateDetail" class="status-detail">The sender stage opens in a focused modal so the main page stays compact.</p>
+                <p id="estimateDetail" class="status-detail">The sender stage prepares the transfer only when you open it.</p>
               </div>
 
               <div id="statusCard" class="status-card" data-tone="idle">
@@ -108,7 +107,7 @@
                   <span class="status-dot" aria-hidden="true"></span>
                   <h2 id="statusTitle" class="status-title">Select a file</h2>
                 </div>
-                <p id="statusDetail" class="status-detail">Choose a file and preset, then prepare the transfer.</p>
+                <p id="statusDetail" class="status-detail">Choose a file and preset, then open the QR stage.</p>
                 <p id="status" class="status-legacy">status: idle</p>
               </div>
             </div>
@@ -131,7 +130,7 @@
           <div class="canvas-frame canvas-frame--modal">
             <canvas id="qrCanvas"></canvas>
           </div>
-          <p id="stageMeta" class="canvas-caption">Prepare a transfer to preview the sender screen here.</p>
+          <p id="stageMeta" class="canvas-caption">Choose a file, then open the QR stage when you are ready.</p>
         </div>
 
         <div class="action-row action-row--stage">
@@ -153,8 +152,8 @@
         <ol class="help-list">
           <li>Select the file you want to share.</li>
           <li>Choose the preset that matches your environment.</li>
-          <li>Press <strong>Prepare transfer</strong>.</li>
-          <li>Open the QR stage modal and start the broadcast once the receiver is already scanning.</li>
+          <li>Press <strong>Open QR stage</strong> to prepare the transfer automatically.</li>
+          <li>Start the broadcast once the receiver is already scanning.</li>
         </ol>
       </div>
     </dialog>
