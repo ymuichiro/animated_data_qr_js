@@ -633,16 +633,23 @@ a[aria-disabled="true"] {
 }
 
 #qrCanvas {
-  width: min(100%, 640px);
-  aspect-ratio: 1 / 1;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  display: block;
+  justify-self: stretch;
   border-radius: 24px;
   background: #fff;
 }
 
 #video {
-  width: min(100%, 720px);
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  max-height: 72dvh;
+  display: block;
+  justify-self: stretch;
+  object-fit: contain;
   border-radius: 24px;
   background: #05070b;
 }
@@ -770,6 +777,7 @@ a[aria-disabled="true"] {
 
 .dialog--stage {
   width: min(960px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
 }
 
 .dialog::backdrop {
@@ -867,11 +875,12 @@ a[aria-disabled="true"] {
 }
 
 .canvas-frame--modal #qrCanvas {
-  width: min(100%, 760px);
+  max-width: 760px;
 }
 
 .video-frame--modal #video {
-  width: min(100%, 760px);
+  max-width: 760px;
+  max-height: calc(100dvh - 320px);
 }
 
 .progress-shell--modal {
@@ -937,6 +946,43 @@ a[aria-disabled="true"] {
   .video-frame {
     min-height: 320px;
   }
+
+  .dialog--stage {
+    width: 100vw;
+    max-width: none;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .dialog-body--stage {
+    min-height: 100dvh;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      16px
+      max(16px, env(safe-area-inset-bottom))
+      16px;
+    align-content: start;
+  }
+
+  .canvas-card--modal,
+  .video-card--modal,
+  .progress-shell--modal {
+    padding: 14px;
+  }
+
+  .canvas-frame--modal,
+  .video-frame--modal {
+    min-height: clamp(360px, calc(100dvh - 300px), 900px);
+    padding: 14px;
+  }
+
+  .canvas-frame--modal #qrCanvas,
+  .video-frame--modal #video {
+    width: 100%;
+    max-width: none;
+  }
 }
 
 @media (max-width: 560px) {
@@ -979,5 +1025,26 @@ a[aria-disabled="true"] {
   .video-frame {
     min-height: 260px;
     padding: 14px;
+  }
+
+  .dialog-body--stage {
+    gap: 14px;
+    padding:
+      max(12px, env(safe-area-inset-top))
+      12px
+      max(12px, env(safe-area-inset-bottom))
+      12px;
+  }
+
+  .canvas-card--modal,
+  .video-card--modal,
+  .progress-shell--modal {
+    padding: 8px;
+  }
+
+  .canvas-frame--modal,
+  .video-frame--modal {
+    min-height: clamp(300px, calc(100dvh - 250px), 760px);
+    padding: 6px;
   }
 }
