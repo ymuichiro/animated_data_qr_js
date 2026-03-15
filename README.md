@@ -1,33 +1,42 @@
 # animated-data-qr-js
 
-ブラウザ間でファイルをオフライン転送する JavaScript ライブラリです。  
-送信側はファイルを分割して animated QR を表示し、受信側はカメラ読み取りで復元します。
+A JavaScript library for fully offline browser-to-browser file transfer over animated QR codes.
+The sender splits a file into chunks, renders them as a looping QR sequence, and the receiver reconstructs the file from camera scans in the browser.
 
-## Demo (GitHub Pages)
+## Live Demo
 
-GitHub Pages で以下のルートを公開できます。
+GitHub Pages is published here:
 
-- `/sender` : 送信モード
-- `/reciever` : 受信モード
-- `/receiver` : `/reciever` への互換リダイレクト
+- [Demo home](https://ymuichiro.github.io/animated_data_qr_js/)
+- [Sender demo](https://ymuichiro.github.io/animated_data_qr_js/sender/)
+- [Receiver demo](https://ymuichiro.github.io/animated_data_qr_js/reciever/)
 
-公開 URL 例:
+Demo routes:
 
-- `https://<your-github-username>.github.io/animated_data_qr_js/`
-- `https://<your-github-username>.github.io/animated_data_qr_js/sender/`
-- `https://<your-github-username>.github.io/animated_data_qr_js/reciever/`
+- `/sender`: sender mode
+- `/reciever`: receiver mode
+- `/receiver`: compatibility redirect to `/reciever`
 
-Pages 用ファイルは [`docs/`](./docs) にあります。
+The current demo UI is designed to be:
+
+- preset-first, with low-level transfer tuning hidden by default
+- mobile-friendly and responsive
+- easy to operate during live demos
+- suitable for GitHub Pages hosting
+
+GitHub Pages source files live in [`docs/`](./docs).
 
 ## Features
 
-- サーバー不要
-- WebRTC / WebSocket 不要
-- 光学的な一方向転送のみ
-- npm / jsDelivr / UMD / ESM で利用可能
-- 既定のフレーム切替は `250ms`
-- chunk payload は既定で `binary` エンコード
-- 1 画面に複数 QR を並べる `symbolsPerFrame` に対応
+- fully offline optical one-way transfer
+- no server upload
+- no WebRTC, WebSocket, Bluetooth, or direct network transport
+- browser-only sender and receiver flows
+- npm, jsDelivr, UMD, and ESM distribution
+- default frame interval of `250ms`
+- default `binary` payload encoding
+- multi-symbol transfer with `symbolsPerFrame`
+- XOR parity recovery with `parityBlockDataChunks`
 
 ## Install
 
@@ -35,7 +44,7 @@ Pages 用ファイルは [`docs/`](./docs) にあります。
 npm install animated-data-qr-js
 ```
 
-## CDN (jsDelivr)
+## CDN
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/animated-data-qr-js@0.1.0/dist/animated-data-qr.umd.min.js"></script>
@@ -51,20 +60,22 @@ import {
 } from "animated-data-qr-js";
 ```
 
-## API
+## Core API
 
 ### `createTransferFrames(fileLike, options?)`
 
-ファイルから転送フレーム列（manifest + chunk）を生成します。
+Builds the transfer frame sequence for a file, including the manifest and chunk frames.
 
 ### `new AnimatedQrSender(options?)`
+
+Main methods:
 
 - `prepare(fileLike, options?)`
 - `start()`
 - `stop()`
 - `renderFrameAt(index)`
 
-主な既定値:
+Important defaults:
 
 - `frameIntervalMs`: `250`
 - `chunkByteSize`: `220`
@@ -80,36 +91,52 @@ import {
 
 ### `estimateTransferStats({ fileSize, chunkByteSize, frameIntervalMs, symbolsPerFrame })`
 
-概算の chunk 数、表示フレーム数、1 周時間、概算 bytes/sec を返します。
+Returns estimated chunk count, display frames, loop duration, and approximate bytes/sec.
 
 ### `new AnimatedQrReceiver(options?)`
+
+Main methods:
 
 - `startCamera()`
 - `start()`
 - `stop()`
 - `stopCamera()`
-- `ingestFrameText(text)`（テスト/独自入力向け）
+- `ingestFrameText(text)` for testing and custom inputs
 
 ### `createDownloadLink(result, anchorElement?)`
 
-受信完了結果からダウンロードリンクを作成します。
+Creates a download link from a completed receive result.
+
+## Demo UX
+
+The sample app intentionally exposes only a preset selector.
+Chunk size, frame interval, QR density, and parity behavior are derived from the selected preset so that the public demo stays approachable.
+
+Each preset shows supplemental guidance in the UI:
+
+- what kind of environment it fits
+- how aggressively it pushes throughput
+- how much recovery protection it applies
+
+The sender and receiver pages also include a help button that explains the operational flow in the browser.
 
 ## Transfer Tuning
 
-80MB 級のファイルは、現在の「単一 QR を 1 フレームずつ順送りする」方式ではかなり時間がかかります。
+Large files can still take significant time because the transport is strictly optical and one-way.
+The biggest performance levers, in order, are:
 
-速度改善で最も効く順序は以下です。
+1. increase payload per display frame
+2. avoid Base64 inflation by using binary payloads
+3. reduce QR error correction where the environment allows it
+4. show multiple QR symbols per frame
+5. add parity or stronger FEC so missed reads do not require extra loops
 
-1. `chunkByteSize` を増やして 1 フレームあたりの運搬量を上げる
-2. Base64 文字列ではなくバイナリ payload を直接 QR 化して 33% 前後の膨張を減らす
-3. QR の誤り訂正を `M` から `L` に落として容量を増やす
-4. 1 画面に複数 QR を並べて並列に運ぶ
-5. 欠損対策として軽い parity/FEC を足し、何周も待たずに復元できるようにする
+This library already applies several of these improvements:
 
-このライブラリでは 2 の「binary payload」を既定値に変更しています。  
-さらに `symbolsPerFrame` を増やすと、1 回の画面更新で複数 chunk を同時に送れます。  
-さらに `parityBlockDataChunks` を設定すると、ブロックごとに XOR parity を 1 枚追加して、1 枚だけ欠けたブロックを復元できます。  
-`/sender` デモでは preset 切替と、現在の設定での「1 周時間」「概算スループット」を表示します。
+- `binary` payload is the default
+- `symbolsPerFrame` supports multi-QR transfer
+- `parityBlockDataChunks` adds XOR parity recovery
+- the demo presets package these tradeoffs into simple choices
 
 ## Development
 
@@ -123,19 +150,20 @@ npm run build
 
 ## GitHub Pages Deploy
 
-このリポジトリには GitHub Actions ワークフロー  
-[`deploy-pages.yml`](./.github/workflows/deploy-pages.yml) を含めています。
+The repository includes [`deploy-pages.yml`](./.github/workflows/deploy-pages.yml).
 
-`main` ブランチへの push または manual dispatch で Pages を自動デプロイします。
+- pushes to `main` deploy GitHub Pages automatically
+- the workflow now builds with Node.js `24`
+- JavaScript-based GitHub Actions are forced onto Node `24` as well
 
-ローカルで Pages artifact を作る場合:
+To build the Pages artifact locally:
 
 ```bash
 npm run build:pages
 node scripts/static-server.mjs --port 4173 --root site
 ```
 
-## Publishing (npm)
+## Publishing to npm
 
 ```bash
 npm run build
@@ -149,4 +177,4 @@ npm publish --access public
 - Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Code of Conduct: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
 - Security Policy: [SECURITY.md](./SECURITY.md)
-- Issues: `https://github.com/ymuichiro/animated_data_qr_js/issues`
+- Issues: [GitHub Issues](https://github.com/ymuichiro/animated_data_qr_js/issues)
