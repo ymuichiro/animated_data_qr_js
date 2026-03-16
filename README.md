@@ -105,6 +105,11 @@ Main methods:
 - `stopCamera()`
 - `ingestFrameText(text)` for testing and custom inputs
 
+Notable options:
+
+- `scanMaxDimension`: caps the internal processing resolution used for decoding
+- `tileScanGridSizes`: controls the overlapping tile scan used to recover multi-QR layouts when the sender stage does not fill the full camera frame
+
 ### `createDownloadLink(result, anchorElement?)`
 
 Creates a download link from a completed receive result.
@@ -144,6 +149,8 @@ This library already applies several of these improvements:
 - `binary` payload is the default
 - `symbolsPerFrame` supports multi-QR transfer
 - `parityBlockDataChunks` adds XOR parity recovery
+- the receiver combines full-frame scan, overlapping tile scan, and grid scan for multi-QR recovery
+- the sender rotates multi-QR placement across display frames to avoid persistent blind spots in a single screen quadrant
 - the demo presets package these tradeoffs into simple choices
 
 ## Development

@@ -89,6 +89,8 @@ export interface ReceiverOptions {
   autoStopOnComplete?: boolean;
   preferBarcodeDetector?: boolean;
   maxSymbolsPerFrame?: number;
+  scanMaxDimension?: number;
+  tileScanGridSizes?: number[];
   cameraConstraints?: MediaStreamConstraints;
   scanCanvas?: HTMLCanvasElement | null;
 }
@@ -203,6 +205,7 @@ export class AnimatedQrReceiver {
   scanIntervalMs: number;
   autoStopOnComplete: boolean;
   maxSymbolsPerFrame: number;
+  scanMaxDimension: number;
   setVideo(videoElement: HTMLVideoElement): void;
   startCamera(constraints?: MediaStreamConstraints): Promise<MediaStream>;
   stopCamera(): void;

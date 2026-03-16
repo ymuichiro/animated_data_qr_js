@@ -43,14 +43,15 @@ function getCanvasDisplaySize(canvas, symbolCount) {
 async function renderQrGrid(canvas, qrSymbols, qrOptions) {
   const { columns, rows } = getGridDimensions(qrSymbols.length);
   const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
-  const context = canvas.getContext("2d");
+  const frameCanvas = document.createElement("canvas");
+  const context = frameCanvas.getContext("2d");
   const gap = 12;
   const cellWidth = Math.floor((width - (gap * (columns + 1))) / columns);
   const cellHeight = Math.floor((height - (gap * (rows + 1))) / rows);
   const drawSize = Math.max(64, Math.min(cellWidth, cellHeight));
 
-  canvas.width = width;
-  canvas.height = height;
+  frameCanvas.width = width;
+  frameCanvas.height = height;
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, height);
 
@@ -67,6 +68,12 @@ async function renderQrGrid(canvas, qrSymbols, qrOptions) {
     const y = gap + (row * (cellHeight + gap)) + Math.max(0, Math.floor((cellHeight - drawSize) / 2));
     context.drawImage(tempCanvas, x, y, drawSize, drawSize);
   }
+
+  const targetContext = canvas.getContext("2d");
+  canvas.width = width;
+  canvas.height = height;
+  targetContext.clearRect(0, 0, width, height);
+  targetContext.drawImage(frameCanvas, 0, 0, width, height);
 }
 
 async function blobLikeToBytes(fileLike) {
@@ -155,6 +162,29 @@ function createDisplayFrames(frames, qrSymbols, symbolsPerFrame) {
     symbols,
     qrSymbols: groupedQrSymbols[index]
   }));
+}
+
+function rotateFrameBatch(displayFrame, rotation) {
+  if (!displayFrame || displayFrame.qrSymbols.length <= 1 || !Number.isInteger(rotation)) {
+    return displayFrame;
+  }
+
+  const count = displayFrame.qrSymbols.length;
+  const offset = ((rotation % count) + count) % count;
+  if (offset === 0) {
+    return displayFrame;
+  }
+
+  return {
+    symbols: [
+      ...displayFrame.symbols.slice(offset),
+      ...displayFrame.symbols.slice(0, offset)
+    ],
+    qrSymbols: [
+      ...displayFrame.qrSymbols.slice(offset),
+      ...displayFrame.qrSymbols.slice(0, offset)
+    ]
+  };
 }
 
 export async function createTransferFrames(fileLike, options = {}) {
@@ -312,7 +342,10 @@ export class AnimatedQrSender extends SimpleEmitter {
 
     const length = this.prepared.displayFrames.length;
     const safeIndex = ((frameIndex % length) + length) % length;
-    const displayFrame = this.prepared.displayFrames[safeIndex];
+    const displayFrame = rotateFrameBatch(
+      this.prepared.displayFrames[safeIndex],
+      safeIndex
+    );
 
     if (displayFrame.qrSymbols.length === 1) {
       const { width, height } = getCanvasDisplaySize(this.canvas, 1);

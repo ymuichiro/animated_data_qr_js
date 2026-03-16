@@ -557,6 +557,7 @@ export function initReceiverDemo({
     scanIntervalMs: 45,
     maxSymbolsPerFrame: 4,
     autoStopOnComplete: true,
+    scanMaxDimension: 720,
     cameraConstraints: {
       audio: false,
       video: {
