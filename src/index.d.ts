@@ -87,10 +87,13 @@ export interface ReceiverOptions {
   video?: HTMLVideoElement | null;
   scanIntervalMs?: number;
   autoStopOnComplete?: boolean;
+  /** @deprecated Accepted temporarily but ignored. ZXing/WASM is always used. */
   preferBarcodeDetector?: boolean;
   maxSymbolsPerFrame?: number;
   scanMaxDimension?: number;
+  /** @deprecated Accepted temporarily but ignored. The decode passes are fixed internally. */
   tileScanGridSizes?: number[];
+  decoderAssetBaseUrl?: string;
   cameraConstraints?: MediaStreamConstraints;
   scanCanvas?: HTMLCanvasElement | null;
 }
@@ -206,6 +209,7 @@ export class AnimatedQrReceiver {
   autoStopOnComplete: boolean;
   maxSymbolsPerFrame: number;
   scanMaxDimension: number;
+  decoderAssetBaseUrl: string | null;
   setVideo(videoElement: HTMLVideoElement): void;
   startCamera(constraints?: MediaStreamConstraints): Promise<MediaStream>;
   stopCamera(): void;

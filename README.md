@@ -39,6 +39,8 @@ GitHub Pages source files live in [`docs/`](./docs).
 - default `binary` payload encoding
 - multi-symbol transfer with `symbolsPerFrame`
 - XOR parity recovery with `parityBlockDataChunks`
+- ZXing/WASM receiver decoding with worker-first execution
+- automatic fallback to main-thread ZXing when a worker cannot start
 
 ## Install
 
@@ -52,6 +54,11 @@ npm install animated-data-qr-js
 <script src="https://cdn.jsdelivr.net/npm/animated-data-qr-js@0.1.0/dist/animated-data-qr.umd.min.js"></script>
 ```
 
+The receiver auto-loads these adjacent files from the same directory:
+
+- `animated-data-qr.decoder.worker.js`
+- `zxing_reader.wasm`
+
 ## ESM
 
 ```js
@@ -61,6 +68,9 @@ import {
   createDownloadLink
 } from "animated-data-qr-js";
 ```
+
+If your asset pipeline moves the worker or WASM files away from the main bundle, pass
+`decoderAssetBaseUrl` when creating the receiver.
 
 ## Core API
 
@@ -86,10 +96,10 @@ Important defaults:
 
 ### `TRANSFER_PRESETS`
 
-- `compatibility`: `220 bytes`, `250ms`, `EC=M`
-- `balanced`: `384 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`
+- `compatibility`: `220 bytes`, `250ms`, `EC=M`, `parityBlockDataChunks=4`
+- `balanced`: `384 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`, `parityBlockDataChunks=6`
 - `throughput`: `512 bytes`, `250ms`, `EC=L`, `symbolsPerFrame=4`
-- `resilient`: `220 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`, `parityBlockDataChunks=8`
+- `resilient`: `220 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`, `parityBlockDataChunks=4`
 
 ### `estimateTransferStats({ fileSize, chunkByteSize, frameIntervalMs, symbolsPerFrame })`
 
@@ -108,7 +118,9 @@ Main methods:
 Notable options:
 
 - `scanMaxDimension`: caps the internal processing resolution used for decoding
-- `tileScanGridSizes`: controls the overlapping tile scan used to recover multi-QR layouts when the sender stage does not fill the full camera frame
+- `decoderAssetBaseUrl`: overrides where the receiver looks for `animated-data-qr.decoder.worker.js` and `zxing_reader.wasm`
+- `preferBarcodeDetector`: deprecated and ignored
+- `tileScanGridSizes`: deprecated and ignored
 
 ### `createDownloadLink(result, anchorElement?)`
 
@@ -132,6 +144,7 @@ Current demo flow:
 - the sender prepares the transfer automatically when you open the QR stage
 - the receiver starts camera scanning as soon as you open the scan stage
 - live receive progress stays inside the receiver modal while the main page remains compact
+- when the transfer completes, the receiver modal closes automatically and the page highlights a clear download button
 
 ## Transfer Tuning
 
@@ -149,9 +162,18 @@ This library already applies several of these improvements:
 - `binary` payload is the default
 - `symbolsPerFrame` supports multi-QR transfer
 - `parityBlockDataChunks` adds XOR parity recovery
-- the receiver combines full-frame scan, overlapping tile scan, and grid scan for multi-QR recovery
-- the sender rotates multi-QR placement across display frames to avoid persistent blind spots in a single screen quadrant
+- the receiver uses ZXing/WASM for full-frame plus overlapping tile passes
+- the sender rotates multi-QR placement across display frames and shifts chunk groupings across loops to avoid persistent blind spots and repeated weak pairings
 - the demo presets package these tradeoffs into simple choices
+
+Because the transport is one-way and loops continuously, transfers naturally slow down near the end: once most chunks are already captured, each successful scan is more likely to be a duplicate than a new chunk. Smaller parity blocks help reduce this tail by reconstructing one missing chunk without waiting for the exact QR to reappear in a later loop.
+
+Current preset guidance:
+
+- `Compatibility`: default and most forgiving, now with short parity blocks to reduce late-stage waiting
+- `Balanced`: faster when two QR symbols read cleanly, with light parity recovery, but still validate on your real devices before making it your default
+- `Throughput`: experimental and best suited to bright screens with newer cameras
+- `Resilient`: stronger parity recovery for unstable capture conditions and long end-of-transfer tails
 
 ## Development
 
@@ -178,6 +200,11 @@ To build the Pages artifact locally:
 npm run build:pages
 node scripts/static-server.mjs --port 4173 --root site
 ```
+
+The generated `site/dist/` directory includes the main bundles plus:
+
+- `animated-data-qr.decoder.worker.js`
+- `zxing_reader.wasm`
 
 ## Publishing to npm
 

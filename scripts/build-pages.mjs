@@ -17,5 +17,13 @@ await copyFile(
   resolve(rootDir, "dist/animated-data-qr.umd.min.js"),
   resolve(siteDir, "dist/animated-data-qr.umd.min.js")
 );
+await copyFile(
+  resolve(rootDir, "dist/animated-data-qr.decoder.worker.js"),
+  resolve(siteDir, "dist/animated-data-qr.decoder.worker.js")
+);
+await copyFile(
+  resolve(rootDir, "dist/zxing_reader.wasm"),
+  resolve(siteDir, "dist/zxing_reader.wasm")
+);
 
 console.log("GitHub Pages artifact generated at ./site");

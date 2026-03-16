@@ -17,7 +17,7 @@ test("animated QR transfer completes in browser runtime", async ({ page }) => {
     receiverVideo.style.width = "420px";
     document.body.appendChild(receiverVideo);
 
-    const payloadText = Array.from({ length: 200 }, (_, index) => `line-${index.toString().padStart(3, "0")}`)
+    const payloadText = Array.from({ length: 120 }, (_, index) => `line-${index.toString().padStart(3, "0")}`)
       .join("\n");
     const file = new File([payloadText], "e2e-payload.txt", {
       type: "text/plain"
@@ -25,12 +25,12 @@ test("animated QR transfer completes in browser runtime", async ({ page }) => {
 
     const sender = new AnimatedQrSender({
       canvas: senderCanvas,
-      frameIntervalMs: 90,
-      chunkByteSize: 48,
+      frameIntervalMs: 80,
+      chunkByteSize: 64,
       qrOptions: {
         errorCorrectionLevel: "M",
         margin: 1,
-        scale: 8
+        scale: 10
       }
     });
 
@@ -43,9 +43,10 @@ test("animated QR transfer completes in browser runtime", async ({ page }) => {
 
     const receiver = new AnimatedQrReceiver({
       video: receiverVideo,
-      scanIntervalMs: 60,
-      autoStopOnComplete: true,
-      preferBarcodeDetector: false
+      scanIntervalMs: 45,
+      scanMaxDimension: 480,
+      maxSymbolsPerFrame: 1,
+      autoStopOnComplete: true
     });
 
     receiver.stream = stream;
@@ -98,14 +99,6 @@ test("multi-QR transfer completes in browser runtime", async ({ page }) => {
   await page.goto("/examples/index.html");
 
   const result = await page.evaluate(async () => {
-    window.BarcodeDetector = class FakeBarcodeDetector {
-      async detect() {
-        return [{
-          rawValue: window.__multiQrFallbackFrame
-        }];
-      }
-    };
-
     const { AnimatedQrSender, AnimatedQrReceiver } = await import("/dist/animated-data-qr.esm.js");
 
     const senderCanvas = document.createElement("canvas");
@@ -139,7 +132,6 @@ test("multi-QR transfer completes in browser runtime", async ({ page }) => {
     });
 
     await sender.prepare(file);
-    window.__multiQrFallbackFrame = sender.prepared.frames[0];
     await sender.start();
 
     const stream = senderCanvas.captureStream(30);
@@ -150,7 +142,6 @@ test("multi-QR transfer completes in browser runtime", async ({ page }) => {
       video: receiverVideo,
       scanIntervalMs: 80,
       autoStopOnComplete: true,
-      preferBarcodeDetector: true,
       maxSymbolsPerFrame: 4
     });
 
@@ -204,12 +195,6 @@ test("multi-QR transfer completes when the sender stage does not fill the camera
   await page.goto("/examples/index.html");
 
   const result = await page.evaluate(async () => {
-    window.BarcodeDetector = class FakeBarcodeDetector {
-      async detect() {
-        return [];
-      }
-    };
-
     const { AnimatedQrSender, AnimatedQrReceiver } = await import("/dist/animated-data-qr.esm.js");
 
     const senderCanvas = document.createElement("canvas");
@@ -274,7 +259,6 @@ test("multi-QR transfer completes when the sender stage does not fill the camera
       video: receiverVideo,
       scanIntervalMs: 80,
       autoStopOnComplete: true,
-      preferBarcodeDetector: false,
       maxSymbolsPerFrame: 4,
       scanMaxDimension: 720
     });
@@ -324,6 +308,106 @@ test("multi-QR transfer completes when the sender stage does not fill the camera
   expect(result.mimeType).toBe("text/plain");
 });
 
+test("receiver falls back to main-thread ZXing when worker startup fails", async ({ page }) => {
+  await page.goto("/examples/index.html");
+
+  const result = await page.evaluate(async () => {
+    window.Worker = class ThrowingWorker {
+      constructor() {
+        throw new Error("worker blocked");
+      }
+    };
+
+    const { AnimatedQrSender, AnimatedQrReceiver } = await import("/dist/animated-data-qr.esm.js");
+
+    const senderCanvas = document.createElement("canvas");
+    senderCanvas.style.width = "420px";
+    document.body.appendChild(senderCanvas);
+
+    const receiverVideo = document.createElement("video");
+    receiverVideo.autoplay = true;
+    receiverVideo.muted = true;
+    receiverVideo.playsInline = true;
+    receiverVideo.style.width = "420px";
+    document.body.appendChild(receiverVideo);
+
+    const payloadText = Array.from({ length: 180 }, (_, index) => `fallback-${index.toString().padStart(3, "0")}`)
+      .join("\n");
+    const file = new File([payloadText], "e2e-fallback.txt", {
+      type: "text/plain"
+    });
+
+    const sender = new AnimatedQrSender({
+      canvas: senderCanvas,
+      frameIntervalMs: 90,
+      chunkByteSize: 48,
+      qrOptions: {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        scale: 8
+      }
+    });
+
+    await sender.prepare(file);
+    await sender.start();
+
+    const stream = senderCanvas.captureStream(30);
+    receiverVideo.srcObject = stream;
+    await receiverVideo.play();
+
+    const receiver = new AnimatedQrReceiver({
+      video: receiverVideo,
+      scanIntervalMs: 60,
+      autoStopOnComplete: true
+    });
+
+    const decoderModes = [];
+    receiver.on("decoder-mode", ({ mode }) => {
+      decoderModes.push(mode);
+    });
+
+    receiver.stream = stream;
+
+    const completed = await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error("Timed out while waiting for fallback transfer completion"));
+      }, 25_000);
+
+      receiver.on("complete", (resultPayload) => {
+        clearTimeout(timeoutId);
+        resolve(resultPayload);
+      });
+
+      receiver.on("error", ({ error }) => {
+        clearTimeout(timeoutId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
+
+      receiver.start().catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+    });
+
+    const restoredText = await completed.blob.text();
+
+    sender.stop();
+    receiver.stop();
+    for (const track of stream.getTracks()) {
+      track.stop();
+    }
+
+    return {
+      expected: payloadText,
+      actual: restoredText,
+      decoderModes
+    };
+  });
+
+  expect(result.actual).toBe(result.expected);
+  expect(result.decoderModes).toContain("main-thread-fallback");
+});
+
 test("sender demo prepares the transfer when opening the QR stage", async ({ page }) => {
   await page.goto("/examples/sender.html");
 
@@ -361,6 +445,99 @@ test("sender demo prepares the transfer when opening the QR stage", async ({ pag
   expect(canvasInfo.darkPixels).toBeGreaterThan(500);
 });
 
+test("receiver demo closes the scan modal and highlights the download action on completion", async ({ page }) => {
+  await page.goto("/examples/receiver.html");
+
+  const result = await page.evaluate(async () => {
+    const { AnimatedQrSender } = await import("/dist/animated-data-qr.esm.js");
+
+    const senderCanvas = document.createElement("canvas");
+    senderCanvas.style.width = "420px";
+    senderCanvas.style.height = "420px";
+    document.body.appendChild(senderCanvas);
+
+    const payloadText = Array.from({ length: 160 }, (_, index) => `demo-${index.toString().padStart(3, "0")}`)
+      .join("\n");
+    const file = new File([payloadText], "receiver-demo.txt", {
+      type: "text/plain"
+    });
+
+    const sender = new AnimatedQrSender({
+      canvas: senderCanvas,
+      frameIntervalMs: 90,
+      chunkByteSize: 48,
+      qrOptions: {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        scale: 8
+      }
+    });
+
+    await sender.prepare(file);
+    await sender.start();
+
+    const stream = senderCanvas.captureStream(30);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => stream
+      }
+    });
+
+    const completion = new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error("Timed out while waiting for receiver demo completion"));
+      }, 25_000);
+
+      const poll = () => {
+        const scanDialog = document.getElementById("scanDialog");
+        const downloadCard = document.getElementById("downloadCard");
+        const download = document.getElementById("download");
+        const statusTitle = document.getElementById("statusTitle");
+
+        if (
+          scanDialog
+          && !scanDialog.open
+          && downloadCard
+          && !downloadCard.classList.contains("hide")
+          && download
+          && !download.classList.contains("hide")
+        ) {
+          clearTimeout(timeoutId);
+          resolve({
+            dialogOpen: scanDialog.open,
+            downloadVisible: !download.classList.contains("hide"),
+            downloadPrimary: download.classList.contains("button-primary"),
+            downloadText: download.textContent,
+            statusTitle: statusTitle?.textContent || ""
+          });
+          return;
+        }
+
+        requestAnimationFrame(poll);
+      };
+
+      poll();
+    });
+
+    document.getElementById("openScanStageBtn")?.click();
+    const completionResult = await completion;
+
+    sender.stop();
+    for (const track of stream.getTracks()) {
+      track.stop();
+    }
+
+    return completionResult;
+  });
+
+  expect(result.dialogOpen).toBe(false);
+  expect(result.downloadVisible).toBe(true);
+  expect(result.downloadPrimary).toBe(true);
+  expect(result.downloadText).toContain("receiver-demo.txt");
+  expect(result.statusTitle).toBe("Transfer complete");
+});
+
 test("receiver demo uses a full-width mobile scan modal", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "mediaDevices", {
@@ -391,6 +568,7 @@ test("receiver demo uses a full-width mobile scan modal", async ({ page }) => {
 
   await expect(page.locator("#scanDialog")).toBeVisible();
   await expect(page.locator("#statusTitle")).toHaveText("Scanning in progress");
+  await expect(page.locator("#decoderModeText")).toContainText("Decoder:");
 
   const layout = await page.locator("#scanDialog").evaluate((dialog) => {
     const rect = dialog.getBoundingClientRect();
@@ -414,4 +592,67 @@ test("receiver demo uses a full-width mobile scan modal", async ({ page }) => {
   expect(layout.dialogHeight).toBeGreaterThanOrEqual(layout.viewportHeight - 1);
   expect(layout.videoWidth / layout.viewportWidth).toBeGreaterThan(0.85);
   expect(layout.frameWidth / layout.frameHeight).toBeGreaterThan(0.9);
+});
+
+test("UMD build resolves the decoder worker relative to the loaded script", async ({ page }) => {
+  await page.goto("/examples/index.html");
+  await page.evaluate(() => {
+    document.body.innerHTML = "";
+  });
+  await page.addScriptTag({ url: "/dist/animated-data-qr.umd.min.js" });
+
+  const workerUrls = await page.evaluate(async () => {
+    const capturedWorkerUrls = [];
+    window.Worker = class FakeWorker {
+      constructor(url) {
+        this.url = url;
+        this.onmessage = null;
+        this.onerror = null;
+        capturedWorkerUrls.push(url);
+      }
+
+      postMessage(payload) {
+        queueMicrotask(() => {
+          if (payload.type === "warmup") {
+            this.onmessage?.({
+              data: {
+                id: payload.id,
+                type: "warmup-ready"
+              }
+            });
+            return;
+          }
+
+          this.onmessage?.({
+            data: {
+              id: payload.id,
+              type: "decode-result",
+              frames: []
+            }
+          });
+        });
+      }
+
+      terminate() {}
+    };
+
+    const video = document.createElement("video");
+    document.body.appendChild(video);
+
+    const receiver = new window.AnimatedDataQR.AnimatedQrReceiver({
+      video,
+      autoStopOnComplete: false
+    });
+    receiver.stream = {
+      getTracks() {
+        return [];
+      }
+    };
+
+    await receiver.start();
+    receiver.stop();
+    return capturedWorkerUrls;
+  });
+
+  expect(workerUrls[0]).toContain("/dist/animated-data-qr.decoder.worker.js");
 });

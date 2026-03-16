@@ -9,7 +9,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     chunkByteSize: 220,
     payloadEncoding: "binary",
     symbolsPerFrame: 1,
-    parityBlockDataChunks: 0,
+    parityBlockDataChunks: 4,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
     })
@@ -19,7 +19,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     chunkByteSize: 384,
     payloadEncoding: "binary",
     symbolsPerFrame: 2,
-    parityBlockDataChunks: 0,
+    parityBlockDataChunks: 6,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
     })
@@ -39,7 +39,7 @@ export const TRANSFER_PRESETS = Object.freeze({
     chunkByteSize: 220,
     payloadEncoding: "binary",
     symbolsPerFrame: 2,
-    parityBlockDataChunks: 8,
+    parityBlockDataChunks: 4,
     qrOptions: Object.freeze({
       errorCorrectionLevel: "M"
     })

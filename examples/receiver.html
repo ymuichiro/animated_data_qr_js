@@ -52,7 +52,12 @@
                 <button id="openScanStageBtn" class="button button-primary" type="button">Open scan stage</button>
               </div>
 
-              <a id="download" class="button-link button button-secondary download-link hide">Download restored file</a>
+              <div id="downloadCard" class="summary-card download-card hide">
+                <span class="section-label">Download</span>
+                <h2 id="downloadTitle" class="estimate-title">Your file is ready</h2>
+                <p id="downloadDetail" class="status-detail">The restored file will appear here as a clear primary action.</p>
+                <a id="download" class="button-link button button-primary download-link hide">Download restored file</a>
+              </div>
             </div>
 
             <div class="control-stack">
@@ -101,6 +106,7 @@
             <div id="progressBar" class="progress-bar"></div>
           </div>
           <div id="progressText" class="progress-copy">0% | No chunks received yet</div>
+          <div id="decoderModeText" class="progress-copy">Decoder: preparing</div>
         </div>
 
         <div class="action-row action-row--stage">

@@ -1,8 +1,8 @@
-import jsQR from "jsqr";
-import { getGridDimensions } from "./grid.js";
 import { concatChunks } from "./utils/chunk.js";
 import { parseFrame } from "./protocol.js";
 import { SimpleEmitter } from "./emitter.js";
+import { buildDecodePasses } from "./decoder-passes.js";
+import { ZxingDecoderController } from "./decoder-controller.js";
 
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
@@ -136,12 +136,9 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     this.maxSymbolsPerFrame = options.maxSymbolsPerFrame ?? 4;
     this.scanMaxDimension = options.scanMaxDimension ?? 960;
     this.tileScanGridSizes = Array.isArray(options.tileScanGridSizes)
-      ? Array.from(
-        new Set(
-          options.tileScanGridSizes.filter((value) => Number.isInteger(value) && value >= 2)
-        )
-      ).sort((left, right) => left - right)
+      ? Array.from(new Set(options.tileScanGridSizes))
       : [2, 3];
+    this.decoderAssetBaseUrl = options.decoderAssetBaseUrl ?? null;
     this.cameraConstraints = options.cameraConstraints ?? {
       audio: false,
       video: {
@@ -158,19 +155,9 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       typeof document !== "undefined" ? document.createElement("canvas") : null
     );
     this.scanContext = this.scanCanvas?.getContext("2d", { willReadFrequently: true }) ?? null;
-
-    this.detector = null;
-    if (
-      this.preferBarcodeDetector
-      && typeof window !== "undefined"
-      && "BarcodeDetector" in window
-    ) {
-      try {
-        this.detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-      } catch {
-        this.detector = null;
-      }
-    }
+    this.decoder = new ZxingDecoderController({
+      decoderAssetBaseUrl: this.decoderAssetBaseUrl
+    });
   }
 
   setVideo(videoElement) {
@@ -214,13 +201,17 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     if (!this.video) {
       throw new Error("No video element configured. Pass { video } or call setVideo().");
     }
-    if (!this.stream) {
-      await this.startCamera(constraints ?? this.cameraConstraints);
-    }
 
     if (this.scanning) {
       return;
     }
+
+    const cameraPromise = this.stream
+      ? Promise.resolve(this.stream)
+      : this.startCamera(constraints ?? this.cameraConstraints);
+    const decoderPromise = this.decoder.prepare();
+    const [, decoderState] = await Promise.all([cameraPromise, decoderPromise]);
+    this.#emitDecoderMode(decoderState, true);
 
     this.scanning = true;
     this.emit("scan-start", {});
@@ -397,21 +388,6 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     }
   }
 
-  #getCandidateSymbolCounts() {
-    const counts = new Set([1]);
-    for (const session of this.sessions.values()) {
-      if (session.symbolsPerFrame > 1) {
-        counts.add(session.symbolsPerFrame);
-      }
-    }
-    for (const count of [2, 4]) {
-      if (count <= this.maxSymbolsPerFrame) {
-        counts.add(count);
-      }
-    }
-    return Array.from(counts).sort((left, right) => left - right);
-  }
-
   #getExpectedSymbolsPerFrame() {
     let expectedSymbolsPerFrame = 1;
     for (const session of this.sessions.values()) {
@@ -435,149 +411,19 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     return Array.from(unique.values());
   }
 
-  #countPayloadFrameInputs(inputs) {
-    let payloadCount = 0;
-    for (const input of this.#dedupeFrameInputs(inputs)) {
-      const parsed = parseFrame(input);
-      if (parsed && parsed.type !== "manifest") {
-        payloadCount += 1;
-      }
+  #emitDecoderMode(state, force = false) {
+    if (!state || (!force && !state.modeChanged)) {
+      return;
     }
-    return payloadCount;
-  }
-
-  #decodeQrImageData(imageData, width, height) {
-    const result = jsQR(imageData.data, width, height, {
-      inversionAttempts: "dontInvert"
+    this.emit("decoder-mode", {
+      mode: state.mode,
+      reason: state.reason ?? null
     });
-    if (!result) {
-      return null;
-    }
-    return result.binaryData ? new Uint8Array(result.binaryData) : result.data;
-  }
-
-  #scanRegionInput(region) {
-    if (!this.scanContext) {
-      return null;
-    }
-
-    const { x, y, width, height } = region;
-    if (width <= 0 || height <= 0) {
-      return null;
-    }
-
-    const imageData = this.scanContext.getImageData(x, y, width, height);
-    return this.#decodeQrImageData(imageData, width, height);
-  }
-
-  #buildGenericTileRegions(width, height) {
-    const regions = [];
-    const seen = new Set();
-
-    for (const gridSize of this.tileScanGridSizes) {
-      const expansionRatio = gridSize === 2 ? 1.36 : 1.24;
-      const regionWidth = Math.min(width, Math.max(64, Math.round((width / gridSize) * expansionRatio)));
-      const regionHeight = Math.min(height, Math.max(64, Math.round((height / gridSize) * expansionRatio)));
-      const stepX = gridSize > 1 ? Math.max(1, Math.round((width - regionWidth) / (gridSize - 1))) : 0;
-      const stepY = gridSize > 1 ? Math.max(1, Math.round((height - regionHeight) / (gridSize - 1))) : 0;
-
-      for (let row = 0; row < gridSize; row += 1) {
-        for (let column = 0; column < gridSize; column += 1) {
-          const x = Math.min(width - regionWidth, Math.max(0, column * stepX));
-          const y = Math.min(height - regionHeight, Math.max(0, row * stepY));
-          const key = `${x}:${y}:${regionWidth}:${regionHeight}`;
-          if (seen.has(key)) {
-            continue;
-          }
-          seen.add(key);
-          regions.push({
-            x,
-            y,
-            width: regionWidth,
-            height: regionHeight
-          });
-        }
-      }
-    }
-
-    return regions;
-  }
-
-  #buildGridRegions(width, height, symbolCount) {
-    const gap = 12;
-    const { columns, rows } = getGridDimensions(symbolCount);
-    const cellWidth = Math.floor((width - (gap * (columns + 1))) / columns);
-    const cellHeight = Math.floor((height - (gap * (rows + 1))) / rows);
-    const overscan = Math.max(4, Math.round(Math.min(cellWidth, cellHeight) * 0.03));
-    const regions = [];
-    const seen = new Set();
-    const shift = Math.max(2, Math.round(overscan * 0.75));
-    const offsets = [
-      [0, 0],
-      [-shift, 0],
-      [shift, 0],
-      [0, -shift],
-      [0, shift]
-    ];
-
-    for (let index = 0; index < symbolCount; index += 1) {
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      const baseX = Math.max(0, gap + (column * (cellWidth + gap)) - overscan);
-      const baseY = Math.max(0, gap + (row * (cellHeight + gap)) - overscan);
-      const sampleWidth = Math.min(width - baseX, cellWidth + (overscan * 2));
-      const sampleHeight = Math.min(height - baseY, cellHeight + (overscan * 2));
-      if (sampleWidth <= 0 || sampleHeight <= 0) {
-        continue;
-      }
-
-      for (const [offsetX, offsetY] of offsets) {
-        const x = Math.min(width - sampleWidth, Math.max(0, baseX + offsetX));
-        const y = Math.min(height - sampleHeight, Math.max(0, baseY + offsetY));
-        const key = `${x}:${y}:${sampleWidth}:${sampleHeight}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        regions.push({
-          x,
-          y,
-          width: sampleWidth,
-          height: sampleHeight
-        });
-      }
-    }
-
-    return regions;
   }
 
   async #readFrameInputs() {
-    if (!this.video || this.video.readyState < 2) {
+    if (!this.video || this.video.readyState < 2 || !this.scanCanvas || !this.scanContext) {
       return [];
-    }
-
-    const detectedInputs = [];
-    const expectedSymbolsPerFrame = this.#getExpectedSymbolsPerFrame();
-
-    if (this.detector) {
-      try {
-        const codes = await this.detector.detect(this.video);
-        for (const code of codes) {
-          if (!code.rawValue) {
-            continue;
-          }
-          const parsed = parseFrame(code.rawValue);
-          if (parsed) {
-            detectedInputs.push(code.rawValue);
-          }
-        }
-      } catch {
-        this.detector = null;
-      }
-    }
-
-    if (!this.scanCanvas || !this.scanContext) {
-      return this.#dedupeFrameInputs(detectedInputs);
     }
 
     const videoWidth = this.video.videoWidth;
@@ -586,12 +432,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       return [];
     }
 
-    const { width, height } = constrainScanSize(
-      videoWidth,
-      videoHeight,
-      this.scanMaxDimension
-    );
-
+    const { width, height } = constrainScanSize(videoWidth, videoHeight, this.scanMaxDimension);
     if (this.scanCanvas.width !== width) {
       this.scanCanvas.width = width;
     }
@@ -600,48 +441,13 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     }
 
     this.scanContext.drawImage(this.video, 0, 0, width, height);
-
-    const inputs = [...detectedInputs];
-    const fullInput = this.#scanRegionInput({
-      x: 0,
-      y: 0,
-      width,
-      height
-    });
-    if (fullInput) {
-      inputs.push(fullInput);
-    }
-
-    if (this.#countPayloadFrameInputs(inputs) < expectedSymbolsPerFrame) {
-      for (const region of this.#buildGenericTileRegions(width, height)) {
-        if (this.#countPayloadFrameInputs(inputs) >= expectedSymbolsPerFrame) {
-          break;
-        }
-
-        const tileInput = this.#scanRegionInput(region);
-        if (tileInput) {
-          inputs.push(tileInput);
-        }
-      }
-    }
-
-    if (this.#countPayloadFrameInputs(inputs) < expectedSymbolsPerFrame) {
-      for (const symbolCount of this.#getCandidateSymbolCounts()) {
-        if (symbolCount === 1) {
-          continue;
-        }
-        for (const region of this.#buildGridRegions(width, height, symbolCount)) {
-          if (this.#countPayloadFrameInputs(inputs) >= expectedSymbolsPerFrame) {
-            break;
-          }
-          const cellInput = this.#scanRegionInput(region);
-          if (cellInput) {
-            inputs.push(cellInput);
-          }
-        }
-      }
-    }
-
-    return this.#dedupeFrameInputs(inputs);
+    const imageData = this.scanContext.getImageData(0, 0, width, height);
+    const decoderState = await this.decoder.decodeImageData(
+      imageData,
+      buildDecodePasses(width, height),
+      this.#getExpectedSymbolsPerFrame()
+    );
+    this.#emitDecoderMode(decoderState);
+    return this.#dedupeFrameInputs(decoderState.frameInputs);
   }
 }

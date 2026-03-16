@@ -187,6 +187,46 @@ function rotateFrameBatch(displayFrame, rotation) {
   };
 }
 
+function getLoopDisplayFrame(prepared, displayFrameIndex, loopIndex = 0) {
+  if (!prepared || prepared.displayFrames.length === 0) {
+    return null;
+  }
+
+  const symbolsPerFrame = Math.max(1, prepared.symbolsPerFrame || 1);
+  const payloadCount = Math.max(0, prepared.frames.length - 1);
+  if (symbolsPerFrame === 1 || payloadCount <= 1) {
+    return prepared.displayFrames[displayFrameIndex] ?? prepared.displayFrames[0];
+  }
+
+  const payloadOffset = ((loopIndex % payloadCount) + payloadCount) % payloadCount;
+  const startIndex = displayFrameIndex * symbolsPerFrame;
+  const symbols = [];
+  const qrSymbols = [];
+
+  for (let slot = 0; slot < symbolsPerFrame; slot += 1) {
+    const combinedIndex = startIndex + slot;
+    if (combinedIndex === 0) {
+      symbols.push(prepared.frames[0]);
+      qrSymbols.push(prepared.qrFrames[0]);
+      continue;
+    }
+
+    const rotatedPayloadIndex = combinedIndex - 1;
+    if (rotatedPayloadIndex >= payloadCount) {
+      break;
+    }
+
+    const actualPayloadIndex = 1 + ((payloadOffset + rotatedPayloadIndex) % payloadCount);
+    symbols.push(prepared.frames[actualPayloadIndex]);
+    qrSymbols.push(prepared.qrFrames[actualPayloadIndex]);
+  }
+
+  return {
+    symbols,
+    qrSymbols
+  };
+}
+
 export async function createTransferFrames(fileLike, options = {}) {
   const chunkByteSize = options.chunkByteSize ?? DEFAULT_CHUNK_BYTE_SIZE;
   if (!Number.isInteger(chunkByteSize) || chunkByteSize <= 0) {
@@ -302,6 +342,7 @@ export class AnimatedQrSender extends SimpleEmitter {
 
     this.prepared = null;
     this.frameIndex = 0;
+    this.loopIndex = 0;
     this.running = false;
     this.timer = null;
   }
@@ -324,6 +365,7 @@ export class AnimatedQrSender extends SimpleEmitter {
 
     this.prepared = transfer;
     this.frameIndex = 0;
+    this.loopIndex = 0;
     this.emit("prepared", transfer);
     return transfer;
   }
@@ -343,8 +385,8 @@ export class AnimatedQrSender extends SimpleEmitter {
     const length = this.prepared.displayFrames.length;
     const safeIndex = ((frameIndex % length) + length) % length;
     const displayFrame = rotateFrameBatch(
-      this.prepared.displayFrames[safeIndex],
-      safeIndex
+      getLoopDisplayFrame(this.prepared, safeIndex, this.loopIndex),
+      safeIndex + this.loopIndex
     );
 
     if (displayFrame.qrSymbols.length === 1) {
@@ -401,6 +443,9 @@ export class AnimatedQrSender extends SimpleEmitter {
     try {
       await this.renderFrameAt(this.frameIndex);
       this.frameIndex = (this.frameIndex + 1) % this.prepared.displayFrames.length;
+      if (this.frameIndex === 0) {
+        this.loopIndex += 1;
+      }
       this.timer = setTimeout(() => {
         void this.#tick();
       }, this.frameIntervalMs);
