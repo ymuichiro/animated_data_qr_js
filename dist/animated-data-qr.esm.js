@@ -12776,13 +12776,14 @@ function getCanvasDisplaySize(canvas, symbolCount) {
 async function renderQrGrid(canvas, qrSymbols, qrOptions) {
   const { columns, rows } = getGridDimensions(qrSymbols.length);
   const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
-  const context = canvas.getContext("2d");
+  const frameCanvas = document.createElement("canvas");
+  const context = frameCanvas.getContext("2d");
   const gap = 12;
   const cellWidth = Math.floor((width - gap * (columns + 1)) / columns);
   const cellHeight = Math.floor((height - gap * (rows + 1)) / rows);
   const drawSize = Math.max(64, Math.min(cellWidth, cellHeight));
-  canvas.width = width;
-  canvas.height = height;
+  frameCanvas.width = width;
+  frameCanvas.height = height;
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, height);
   for (let index = 0; index < qrSymbols.length; index += 1) {
@@ -12797,6 +12798,11 @@ async function renderQrGrid(canvas, qrSymbols, qrOptions) {
     const y = gap + row * (cellHeight + gap) + Math.max(0, Math.floor((cellHeight - drawSize) / 2));
     context.drawImage(tempCanvas, x, y, drawSize, drawSize);
   }
+  const targetContext = canvas.getContext("2d");
+  canvas.width = width;
+  canvas.height = height;
+  targetContext.clearRect(0, 0, width, height);
+  targetContext.drawImage(frameCanvas, 0, 0, width, height);
 }
 async function blobLikeToBytes(fileLike) {
   if (!fileLike || typeof fileLike.arrayBuffer !== "function") {
@@ -12876,6 +12882,26 @@ function createDisplayFrames(frames, qrSymbols, symbolsPerFrame) {
     symbols,
     qrSymbols: groupedQrSymbols[index]
   }));
+}
+function rotateFrameBatch(displayFrame, rotation) {
+  if (!displayFrame || displayFrame.qrSymbols.length <= 1 || !Number.isInteger(rotation)) {
+    return displayFrame;
+  }
+  const count = displayFrame.qrSymbols.length;
+  const offset = (rotation % count + count) % count;
+  if (offset === 0) {
+    return displayFrame;
+  }
+  return {
+    symbols: [
+      ...displayFrame.symbols.slice(offset),
+      ...displayFrame.symbols.slice(0, offset)
+    ],
+    qrSymbols: [
+      ...displayFrame.qrSymbols.slice(offset),
+      ...displayFrame.qrSymbols.slice(0, offset)
+    ]
+  };
 }
 async function createTransferFrames(fileLike, options = {}) {
   var _a, _b, _c, _d, _e, _f, _g, _h;
@@ -13015,7 +13041,10 @@ var AnimatedQrSender = class extends SimpleEmitter {
     }
     const length = this.prepared.displayFrames.length;
     const safeIndex = (frameIndex % length + length) % length;
-    const displayFrame = this.prepared.displayFrames[safeIndex];
+    const displayFrame = rotateFrameBatch(
+      this.prepared.displayFrames[safeIndex],
+      safeIndex
+    );
     if (displayFrame.qrSymbols.length === 1) {
       const { width, height } = getCanvasDisplaySize(this.canvas, 1);
       this.canvas.width = width;
@@ -13077,6 +13106,20 @@ tick_fn = async function() {
 
 // src/receiver.js
 var import_jsqr = __toESM(require_jsQR(), 1);
+function constrainScanSize(width, height, maxDimension) {
+  if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
+    return { width, height };
+  }
+  const longestEdge = Math.max(width, height);
+  if (longestEdge <= maxDimension) {
+    return { width, height };
+  }
+  const scale = maxDimension / longestEdge;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale))
+  };
+}
 function createSession(sessionId, totalChunks) {
   return {
     sessionId,
@@ -13167,10 +13210,10 @@ function createDownloadLink(result, anchorElement = null) {
   anchor.download = result.fileName;
   return { url, anchor };
 }
-var _AnimatedQrReceiver_instances, scanTick_fn, getCandidateSymbolCounts_fn, getExpectedSymbolsPerFrame_fn, dedupeFrameInputs_fn, readFrameInputs_fn;
+var _AnimatedQrReceiver_instances, scanTick_fn, getCandidateSymbolCounts_fn, getExpectedSymbolsPerFrame_fn, dedupeFrameInputs_fn, countPayloadFrameInputs_fn, decodeQrImageData_fn, scanRegionInput_fn, buildGenericTileRegions_fn, buildGridRegions_fn, readFrameInputs_fn;
 var AnimatedQrReceiver = class extends SimpleEmitter {
   constructor(options = {}) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
     super();
     __privateAdd(this, _AnimatedQrReceiver_instances);
     this.video = (_a = options.video) != null ? _a : null;
@@ -13178,7 +13221,13 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     this.autoStopOnComplete = (_c = options.autoStopOnComplete) != null ? _c : true;
     this.preferBarcodeDetector = (_d = options.preferBarcodeDetector) != null ? _d : true;
     this.maxSymbolsPerFrame = (_e = options.maxSymbolsPerFrame) != null ? _e : 4;
-    this.cameraConstraints = (_f = options.cameraConstraints) != null ? _f : {
+    this.scanMaxDimension = (_f = options.scanMaxDimension) != null ? _f : 960;
+    this.tileScanGridSizes = Array.isArray(options.tileScanGridSizes) ? Array.from(
+      new Set(
+        options.tileScanGridSizes.filter((value) => Number.isInteger(value) && value >= 2)
+      )
+    ).sort((left, right) => left - right) : [2, 3];
+    this.cameraConstraints = (_g = options.cameraConstraints) != null ? _g : {
       audio: false,
       video: {
         facingMode: "environment"
@@ -13188,8 +13237,8 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     this.stream = null;
     this.scanning = false;
     this.scanTimer = null;
-    this.scanCanvas = (_g = options.scanCanvas) != null ? _g : typeof document !== "undefined" ? document.createElement("canvas") : null;
-    this.scanContext = (_i = (_h = this.scanCanvas) == null ? void 0 : _h.getContext("2d", { willReadFrequently: true })) != null ? _i : null;
+    this.scanCanvas = (_h = options.scanCanvas) != null ? _h : typeof document !== "undefined" ? document.createElement("canvas") : null;
+    this.scanContext = (_j = (_i = this.scanCanvas) == null ? void 0 : _i.getContext("2d", { willReadFrequently: true })) != null ? _j : null;
     this.detector = null;
     if (this.preferBarcodeDetector && typeof window !== "undefined" && "BarcodeDetector" in window) {
       try {
@@ -13432,6 +13481,109 @@ dedupeFrameInputs_fn = function(inputs) {
   }
   return Array.from(unique.values());
 };
+countPayloadFrameInputs_fn = function(inputs) {
+  let payloadCount = 0;
+  for (const input of __privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, inputs)) {
+    const parsed = parseFrame(input);
+    if (parsed && parsed.type !== "manifest") {
+      payloadCount += 1;
+    }
+  }
+  return payloadCount;
+};
+decodeQrImageData_fn = function(imageData, width, height) {
+  const result = (0, import_jsqr.default)(imageData.data, width, height, {
+    inversionAttempts: "dontInvert"
+  });
+  if (!result) {
+    return null;
+  }
+  return result.binaryData ? new Uint8Array(result.binaryData) : result.data;
+};
+scanRegionInput_fn = function(region) {
+  if (!this.scanContext) {
+    return null;
+  }
+  const { x, y, width, height } = region;
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+  const imageData = this.scanContext.getImageData(x, y, width, height);
+  return __privateMethod(this, _AnimatedQrReceiver_instances, decodeQrImageData_fn).call(this, imageData, width, height);
+};
+buildGenericTileRegions_fn = function(width, height) {
+  const regions = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const gridSize of this.tileScanGridSizes) {
+    const expansionRatio = gridSize === 2 ? 1.36 : 1.24;
+    const regionWidth = Math.min(width, Math.max(64, Math.round(width / gridSize * expansionRatio)));
+    const regionHeight = Math.min(height, Math.max(64, Math.round(height / gridSize * expansionRatio)));
+    const stepX = gridSize > 1 ? Math.max(1, Math.round((width - regionWidth) / (gridSize - 1))) : 0;
+    const stepY = gridSize > 1 ? Math.max(1, Math.round((height - regionHeight) / (gridSize - 1))) : 0;
+    for (let row = 0; row < gridSize; row += 1) {
+      for (let column = 0; column < gridSize; column += 1) {
+        const x = Math.min(width - regionWidth, Math.max(0, column * stepX));
+        const y = Math.min(height - regionHeight, Math.max(0, row * stepY));
+        const key = `${x}:${y}:${regionWidth}:${regionHeight}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        regions.push({
+          x,
+          y,
+          width: regionWidth,
+          height: regionHeight
+        });
+      }
+    }
+  }
+  return regions;
+};
+buildGridRegions_fn = function(width, height, symbolCount) {
+  const gap = 12;
+  const { columns, rows } = getGridDimensions(symbolCount);
+  const cellWidth = Math.floor((width - gap * (columns + 1)) / columns);
+  const cellHeight = Math.floor((height - gap * (rows + 1)) / rows);
+  const overscan = Math.max(4, Math.round(Math.min(cellWidth, cellHeight) * 0.03));
+  const regions = [];
+  const seen = /* @__PURE__ */ new Set();
+  const shift = Math.max(2, Math.round(overscan * 0.75));
+  const offsets = [
+    [0, 0],
+    [-shift, 0],
+    [shift, 0],
+    [0, -shift],
+    [0, shift]
+  ];
+  for (let index = 0; index < symbolCount; index += 1) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const baseX = Math.max(0, gap + column * (cellWidth + gap) - overscan);
+    const baseY = Math.max(0, gap + row * (cellHeight + gap) - overscan);
+    const sampleWidth = Math.min(width - baseX, cellWidth + overscan * 2);
+    const sampleHeight = Math.min(height - baseY, cellHeight + overscan * 2);
+    if (sampleWidth <= 0 || sampleHeight <= 0) {
+      continue;
+    }
+    for (const [offsetX, offsetY] of offsets) {
+      const x = Math.min(width - sampleWidth, Math.max(0, baseX + offsetX));
+      const y = Math.min(height - sampleHeight, Math.max(0, baseY + offsetY));
+      const key = `${x}:${y}:${sampleWidth}:${sampleHeight}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      regions.push({
+        x,
+        y,
+        width: sampleWidth,
+        height: sampleHeight
+      });
+    }
+  }
+  return regions;
+};
 readFrameInputs_fn = async function() {
   if (!this.video || this.video.readyState < 2) {
     return [];
@@ -13457,11 +13609,16 @@ readFrameInputs_fn = async function() {
   if (!this.scanCanvas || !this.scanContext) {
     return __privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, detectedInputs);
   }
-  const width = this.video.videoWidth;
-  const height = this.video.videoHeight;
-  if (!width || !height) {
+  const videoWidth = this.video.videoWidth;
+  const videoHeight = this.video.videoHeight;
+  if (!videoWidth || !videoHeight) {
     return [];
   }
+  const { width, height } = constrainScanSize(
+    videoWidth,
+    videoHeight,
+    this.scanMaxDimension
+  );
   if (this.scanCanvas.width !== width) {
     this.scanCanvas.width = width;
   }
@@ -13470,38 +13627,38 @@ readFrameInputs_fn = async function() {
   }
   this.scanContext.drawImage(this.video, 0, 0, width, height);
   const inputs = [...detectedInputs];
-  const fullFrame = this.scanContext.getImageData(0, 0, width, height);
-  const fullResult = (0, import_jsqr.default)(fullFrame.data, width, height, {
-    inversionAttempts: "dontInvert"
+  const fullInput = __privateMethod(this, _AnimatedQrReceiver_instances, scanRegionInput_fn).call(this, {
+    x: 0,
+    y: 0,
+    width,
+    height
   });
-  if (fullResult) {
-    inputs.push(fullResult.binaryData ? new Uint8Array(fullResult.binaryData) : fullResult.data);
+  if (fullInput) {
+    inputs.push(fullInput);
   }
-  if (__privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, inputs).length < expectedSymbolsPerFrame) {
-    const gap = 12;
+  if (__privateMethod(this, _AnimatedQrReceiver_instances, countPayloadFrameInputs_fn).call(this, inputs) < expectedSymbolsPerFrame) {
+    for (const region of __privateMethod(this, _AnimatedQrReceiver_instances, buildGenericTileRegions_fn).call(this, width, height)) {
+      if (__privateMethod(this, _AnimatedQrReceiver_instances, countPayloadFrameInputs_fn).call(this, inputs) >= expectedSymbolsPerFrame) {
+        break;
+      }
+      const tileInput = __privateMethod(this, _AnimatedQrReceiver_instances, scanRegionInput_fn).call(this, region);
+      if (tileInput) {
+        inputs.push(tileInput);
+      }
+    }
+  }
+  if (__privateMethod(this, _AnimatedQrReceiver_instances, countPayloadFrameInputs_fn).call(this, inputs) < expectedSymbolsPerFrame) {
     for (const symbolCount of __privateMethod(this, _AnimatedQrReceiver_instances, getCandidateSymbolCounts_fn).call(this)) {
       if (symbolCount === 1) {
         continue;
       }
-      const { columns, rows } = getGridDimensions(symbolCount);
-      const cellWidth = Math.floor((width - gap * (columns + 1)) / columns);
-      const cellHeight = Math.floor((height - gap * (rows + 1)) / rows);
-      for (let index = 0; index < symbolCount; index += 1) {
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-        const x = Math.max(0, gap + column * (cellWidth + gap) - 4);
-        const y = Math.max(0, gap + row * (cellHeight + gap) - 4);
-        const sampleWidth = Math.min(width - x, cellWidth + 8);
-        const sampleHeight = Math.min(height - y, cellHeight + 8);
-        if (sampleWidth <= 0 || sampleHeight <= 0) {
-          continue;
+      for (const region of __privateMethod(this, _AnimatedQrReceiver_instances, buildGridRegions_fn).call(this, width, height, symbolCount)) {
+        if (__privateMethod(this, _AnimatedQrReceiver_instances, countPayloadFrameInputs_fn).call(this, inputs) >= expectedSymbolsPerFrame) {
+          break;
         }
-        const cellFrame = this.scanContext.getImageData(x, y, sampleWidth, sampleHeight);
-        const cellResult = (0, import_jsqr.default)(cellFrame.data, sampleWidth, sampleHeight, {
-          inversionAttempts: "dontInvert"
-        });
-        if (cellResult) {
-          inputs.push(cellResult.binaryData ? new Uint8Array(cellResult.binaryData) : cellResult.data);
+        const cellInput = __privateMethod(this, _AnimatedQrReceiver_instances, scanRegionInput_fn).call(this, region);
+        if (cellInput) {
+          inputs.push(cellInput);
         }
       }
     }
