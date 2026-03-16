@@ -1,35 +1,35 @@
 export const PRESET_CONTENT = Object.freeze({
   compatibility: {
     label: "Compatibility",
-    tag: "Most forgiving",
-    description: "Best for older phones, smaller screens, or imperfect lighting. This preset prioritizes reliable reads over raw throughput.",
-    paceCaption: "Slower density for stable scanning",
+    tag: "Recommended default",
+    description: "Best for older phones, smaller screens, or imperfect lighting. It stays on one QR symbol per frame and adds short parity blocks to reduce end-of-transfer waiting.",
+    paceCaption: "Single-symbol pacing for stable scanning",
     densityCaption: "One QR symbol per frame",
-    protectionCaption: "Standard QR protection"
+    protectionCaption: "Small parity blocks reduce tail slowdown"
   },
   balanced: {
     label: "Balanced",
-    tag: "Default choice",
-    description: "A well-rounded preset for most demos. It raises throughput with two symbols per frame while keeping scanning comfortable.",
-    paceCaption: "Fast enough for live demos",
+    tag: "Faster in good conditions",
+    description: "Raises throughput with two QR symbols per frame and light parity recovery. Use this when the display is bright and the camera can hold both symbols clearly.",
+    paceCaption: "Faster pacing for strong camera conditions",
     densityCaption: "Two QR symbols per frame",
-    protectionCaption: "Standard QR protection"
+    protectionCaption: "Light parity recovery for missed reads"
   },
   throughput: {
     label: "Throughput",
-    tag: "Fastest transfer",
-    description: "Optimized for speed on bright displays and newer cameras. Use this when you want shorter transfer times and can keep devices steady.",
+    tag: "Experimental",
+    description: "Optimized for speed on bright displays and newer cameras. Use this only when you can keep devices steady and multi-QR detection is already reliable on your hardware.",
     paceCaption: "Maximum payload per frame",
     densityCaption: "Four QR symbols per frame",
     protectionCaption: "Lower error correction for capacity"
   },
   resilient: {
     label: "Resilient",
-    tag: "Missed-frame recovery",
-    description: "Adds parity recovery so an occasional missed symbol does not force another full loop. Great when the camera view is less stable.",
-    paceCaption: "Balanced for real-world scans",
-    densityCaption: "Two QR symbols plus recovery parity",
-    protectionCaption: "Restores one missed chunk per block"
+    tag: "Stronger recovery",
+    description: "Uses two QR symbols per frame with tighter parity blocks so missed reads recover sooner. Choose this when the view shakes, focus drifts, or the last chunks take too long.",
+    paceCaption: "Balanced throughput with stronger recovery",
+    densityCaption: "Two QR symbols plus parity recovery",
+    protectionCaption: "Restores one missed chunk in short blocks"
   }
 });
 
@@ -94,6 +94,16 @@ function setText(id, value) {
   if (element) {
     element.textContent = value;
   }
+}
+
+function formatDecoderMode(mode) {
+  if (mode === "worker") {
+    return "Decoder: Worker";
+  }
+  if (mode === "main-thread-fallback") {
+    return "Decoder: Main-thread fallback";
+  }
+  return "Decoder: preparing";
 }
 
 function setStatus({ tone, title, detail, legacy }) {
@@ -262,7 +272,7 @@ export function initSenderDemo({
   }
 
   function getCurrentPreset() {
-    const presetName = presetSelect?.value || "balanced";
+    const presetName = presetSelect?.value || "compatibility";
     return {
       presetName,
       preset: resolveTransferPreset(presetName)
@@ -549,6 +559,7 @@ export function initReceiverDemo({
   const stopBtn = byId("stopBtn");
   const scanDialog = byId("scanDialog");
   const scanCloseBtn = byId("scanCloseBtn");
+  const downloadCard = byId("downloadCard");
   const download = byId("download");
   let downloadUrl = null;
 
@@ -588,6 +599,13 @@ export function initReceiverDemo({
     closeDialog(scanDialog);
   }
 
+  function closeScanDialogAfterComplete() {
+    receiver.stop();
+    receiver.stopCamera();
+    closeDialog(scanDialog);
+    syncButtons(false);
+  }
+
   function syncButtons(scanning) {
     if (openScanStageBtn) {
       openScanStageBtn.disabled = Boolean(scanning);
@@ -601,14 +619,47 @@ export function initReceiverDemo({
   }
 
   function hideDownload() {
+    if (downloadCard) {
+      downloadCard.classList.add("hide");
+    }
     if (download) {
       download.classList.add("hide");
       download.textContent = "Download restored file";
     }
+    setText("downloadTitle", "Your file is ready");
+    setText("downloadDetail", "The restored file will appear here as a clear primary action.");
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
       downloadUrl = null;
     }
+  }
+
+  function showDownload(result) {
+    hideDownload();
+    const { url, anchor } = createDownloadLink(result, download);
+    downloadUrl = url;
+
+    if (downloadCard) {
+      downloadCard.classList.remove("hide");
+    }
+    setText("downloadTitle", `Ready to save ${result.fileName}`);
+    setText("downloadDetail", "Use the blue download button below to save the reconstructed file locally.");
+    anchor.textContent = `Download ${result.fileName} (${formatBytes(result.size)})`;
+    anchor.classList.remove("hide");
+    anchor.classList.add("button-primary");
+    anchor.addEventListener("click", () => {
+      setTimeout(() => {
+        if (downloadUrl) {
+          URL.revokeObjectURL(downloadUrl);
+          downloadUrl = null;
+        }
+      }, 2000);
+    }, { once: true });
+
+    requestAnimationFrame(() => {
+      downloadCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      anchor.focus?.();
+    });
   }
 
   function resetProgressUi() {
@@ -616,6 +667,7 @@ export function initReceiverDemo({
     receiver.reset();
     setText("manifestName", "Waiting for sender manifest");
     setText("manifestMeta", "The file details will appear here once the first manifest is read.");
+    setText("decoderModeText", "Decoder: preparing");
 
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
@@ -631,6 +683,7 @@ export function initReceiverDemo({
     openScanDialog();
     resetProgressUi();
     setText("stageMeta", "Requesting camera access and preparing the scan stage...");
+    setText("decoderModeText", "Decoder: preparing");
     setStatus({
       tone: "working",
       title: "Starting camera",
@@ -681,6 +734,10 @@ export function initReceiverDemo({
     syncButtons(false);
   });
 
+  receiver.on("decoder-mode", ({ mode }) => {
+    setText("decoderModeText", formatDecoderMode(mode));
+  });
+
   receiver.on("camera-stop", () => {
     if (!receiver.scanning) {
       setText("stageMeta", "Scan stopped. Open the scan stage again when the sender is ready.");
@@ -720,19 +777,7 @@ export function initReceiverDemo({
   });
 
   receiver.on("complete", (result) => {
-    hideDownload();
-    const { url, anchor } = createDownloadLink(result, download);
-    downloadUrl = url;
-    anchor.textContent = `Download ${result.fileName} (${formatBytes(result.size)})`;
-    anchor.classList.remove("hide");
-    anchor.addEventListener("click", () => {
-      setTimeout(() => {
-        if (downloadUrl) {
-          URL.revokeObjectURL(downloadUrl);
-          downloadUrl = null;
-        }
-      }, 2000);
-    }, { once: true });
+    showDownload(result);
 
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
@@ -747,10 +792,11 @@ export function initReceiverDemo({
     setStatus({
       tone: "complete",
       title: "Transfer complete",
-      detail: "Download the reconstructed file from the button below.",
+      detail: "The scan stage closed automatically. Use the highlighted download button on the page.",
       legacy: "status: complete"
     });
-    setText("stageMeta", "Transfer complete. The main page now shows the download action.");
+    setText("stageMeta", "Transfer complete. Closing the scan stage and returning to the download action.");
+    closeScanDialogAfterComplete();
     syncButtons(false);
   });
 
@@ -801,6 +847,7 @@ export function initReceiverDemo({
   setText("manifestName", "Waiting for sender manifest");
   setText("manifestMeta", "The file details will appear here once the first manifest is read.");
   setText("stageMeta", "Open the scan stage to start the camera and watch live progress.");
+  setText("decoderModeText", "Decoder: preparing");
   const progressText = byId("progressText");
   if (progressText) {
     progressText.textContent = "0%  |  No chunks received yet";

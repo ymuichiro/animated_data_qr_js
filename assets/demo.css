@@ -743,6 +743,16 @@ a[aria-disabled="true"] {
 
 .download-link {
   width: 100%;
+  min-height: 56px;
+  font-size: 1rem;
+}
+
+.download-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-color: rgba(21, 111, 240, 0.18);
+  background: linear-gradient(135deg, rgba(21, 111, 240, 0.08), rgba(255, 255, 255, 0.92));
 }
 
 .helper-list,
