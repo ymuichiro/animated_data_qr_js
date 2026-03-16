@@ -978,10 +978,24 @@ a[aria-disabled="true"] {
     padding: 14px;
   }
 
+  .video-frame--modal {
+    min-height: 0;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    overflow: hidden;
+  }
+
   .canvas-frame--modal #qrCanvas,
   .video-frame--modal #video {
     width: 100%;
     max-width: none;
+  }
+
+  .video-frame--modal #video {
+    height: 100%;
+    max-height: none;
+    object-fit: cover;
+    border-radius: inherit;
   }
 }
 
@@ -1046,5 +1060,11 @@ a[aria-disabled="true"] {
   .video-frame--modal {
     min-height: clamp(300px, calc(100dvh - 250px), 760px);
     padding: 6px;
+  }
+
+  .video-frame--modal {
+    min-height: 0;
+    aspect-ratio: 1 / 1;
+    padding: 0;
   }
 }
