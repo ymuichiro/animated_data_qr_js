@@ -368,13 +368,13 @@ test("receiver demo uses a full-width mobile scan modal", async ({ page }) => {
       value: {
         getUserMedia: async () => {
           const canvas = document.createElement("canvas");
-          canvas.width = 640;
-          canvas.height = 360;
+          canvas.width = 360;
+          canvas.height = 640;
           const context = canvas.getContext("2d");
           context.fillStyle = "#05070b";
           context.fillRect(0, 0, canvas.width, canvas.height);
           context.fillStyle = "#ffffff";
-          context.fillRect(120, 40, 400, 280);
+          context.fillRect(40, 120, 280, 400);
           return canvas.captureStream(30);
         }
       }
@@ -395,17 +395,23 @@ test("receiver demo uses a full-width mobile scan modal", async ({ page }) => {
   const layout = await page.locator("#scanDialog").evaluate((dialog) => {
     const rect = dialog.getBoundingClientRect();
     const video = dialog.querySelector("#video");
+    const frame = dialog.querySelector(".video-frame--modal");
     const videoRect = video?.getBoundingClientRect();
+    const frameRect = frame?.getBoundingClientRect();
     return {
       dialogWidth: rect.width,
       dialogHeight: rect.height,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
-      videoWidth: videoRect?.width ?? 0
+      videoWidth: videoRect?.width ?? 0,
+      videoHeight: videoRect?.height ?? 0,
+      frameWidth: frameRect?.width ?? 0,
+      frameHeight: frameRect?.height ?? 0
     };
   });
 
   expect(layout.dialogWidth).toBeGreaterThanOrEqual(layout.viewportWidth - 1);
   expect(layout.dialogHeight).toBeGreaterThanOrEqual(layout.viewportHeight - 1);
   expect(layout.videoWidth / layout.viewportWidth).toBeGreaterThan(0.85);
+  expect(layout.frameWidth / layout.frameHeight).toBeGreaterThan(0.9);
 });
