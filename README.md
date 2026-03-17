@@ -2,6 +2,13 @@
 
 Static demo files for the GitHub Pages site.
 
+The Pages demo now supports:
+
+- single-file transfer
+- folder transfer with internal archive packing
+- extracted-folder save on supported browsers
+- ZIP fallback download for restored folders
+
 ## Routes
 
 - `/` : demo home

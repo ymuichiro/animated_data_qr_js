@@ -1649,22 +1649,22 @@ var require_qrcode = __commonJS({
     }
     function setupVersionInfo(matrix, version) {
       const size = matrix.size;
-      const bits = Version.getEncodedBits(version);
+      const bits2 = Version.getEncodedBits(version);
       let row, col, mod;
       for (let i = 0; i < 18; i++) {
         row = Math.floor(i / 3);
         col = i % 3 + size - 8 - 3;
-        mod = (bits >> i & 1) === 1;
+        mod = (bits2 >> i & 1) === 1;
         matrix.set(row, col, mod, true);
         matrix.set(col, row, mod, true);
       }
     }
     function setupFormatInfo(matrix, errorCorrectionLevel, maskPattern) {
       const size = matrix.size;
-      const bits = FormatInfo.getEncodedBits(errorCorrectionLevel, maskPattern);
+      const bits2 = FormatInfo.getEncodedBits(errorCorrectionLevel, maskPattern);
       let i, mod;
       for (i = 0; i < 15; i++) {
-        mod = (bits >> i & 1) === 1;
+        mod = (bits2 >> i & 1) === 1;
         if (i < 6) {
           matrix.set(i, 8, mod, true);
         } else if (i < 8) {
@@ -2239,7 +2239,7 @@ function findSeparatorOffsets(bytes, expectedCount) {
   return offsets;
 }
 function parseTextFrame(frameText) {
-  var _a, _b;
+  var _a2, _b2;
   if (typeof frameText !== "string" || frameText.length === 0) {
     return null;
   }
@@ -2259,8 +2259,8 @@ function parseTextFrame(frameText) {
     }
     let mimeType;
     let fileName;
-    const parityBlockDataChunks = parts.length >= 9 ? (_a = parsePositiveInt(parts[8])) != null ? _a : 0 : 0;
-    const symbolsPerFrame = parts.length >= 10 ? (_b = parsePositiveInt(parts[9])) != null ? _b : 1 : 1;
+    const parityBlockDataChunks = parts.length >= 9 ? (_a2 = parsePositiveInt(parts[8])) != null ? _a2 : 0 : 0;
+    const symbolsPerFrame = parts.length >= 10 ? (_b2 = parsePositiveInt(parts[9])) != null ? _b2 : 1 : 1;
     try {
       mimeType = decodeText(parts[6]) || "application/octet-stream";
       fileName = decodeText(parts[7]) || "transfer.bin";
@@ -2685,8 +2685,8 @@ var TRANSFER_PRESETS = Object.freeze({
   })
 });
 function resolveTransferPreset(name = "compatibility") {
-  var _a;
-  const preset = (_a = TRANSFER_PRESETS[name]) != null ? _a : TRANSFER_PRESETS.compatibility;
+  var _a2;
+  const preset = (_a2 = TRANSFER_PRESETS[name]) != null ? _a2 : TRANSFER_PRESETS.compatibility;
   return {
     frameIntervalMs: preset.frameIntervalMs,
     chunkByteSize: preset.chunkByteSize,
@@ -2886,14 +2886,14 @@ function rotateFrameBatch(displayFrame, rotation) {
   };
 }
 function getLoopDisplayFrame(prepared, displayFrameIndex, loopIndex = 0) {
-  var _a;
+  var _a2;
   if (!prepared || prepared.displayFrames.length === 0) {
     return null;
   }
   const symbolsPerFrame = Math.max(1, prepared.symbolsPerFrame || 1);
   const payloadCount = Math.max(0, prepared.frames.length - 1);
   if (symbolsPerFrame === 1 || payloadCount <= 1) {
-    return (_a = prepared.displayFrames[displayFrameIndex]) != null ? _a : prepared.displayFrames[0];
+    return (_a2 = prepared.displayFrames[displayFrameIndex]) != null ? _a2 : prepared.displayFrames[0];
   }
   const payloadOffset = (loopIndex % payloadCount + payloadCount) % payloadCount;
   const startIndex = displayFrameIndex * symbolsPerFrame;
@@ -2920,12 +2920,12 @@ function getLoopDisplayFrame(prepared, displayFrameIndex, loopIndex = 0) {
   };
 }
 async function createTransferFrames(fileLike, options = {}) {
-  var _a, _b, _c, _d, _e2, _f, _g, _h;
-  const chunkByteSize = (_a = options.chunkByteSize) != null ? _a : DEFAULT_CHUNK_BYTE_SIZE;
+  var _a2, _b2, _c, _d, _e2, _f, _g, _h;
+  const chunkByteSize = (_a2 = options.chunkByteSize) != null ? _a2 : DEFAULT_CHUNK_BYTE_SIZE;
   if (!Number.isInteger(chunkByteSize) || chunkByteSize <= 0) {
     throw new TypeError("chunkByteSize must be an integer > 0");
   }
-  const payloadEncoding = (_b = options.payloadEncoding) != null ? _b : DEFAULT_PAYLOAD_ENCODING;
+  const payloadEncoding = (_b2 = options.payloadEncoding) != null ? _b2 : DEFAULT_PAYLOAD_ENCODING;
   if (payloadEncoding !== "binary" && payloadEncoding !== "base64") {
     throw new TypeError("payloadEncoding must be either 'binary' or 'base64'");
   }
@@ -3005,11 +3005,11 @@ async function createTransferFrames(fileLike, options = {}) {
 var _AnimatedQrSender_instances, tick_fn;
 var AnimatedQrSender = class extends SimpleEmitter {
   constructor(options = {}) {
-    var _a, _b, _c, _d, _e2, _f, _g;
+    var _a2, _b2, _c, _d, _e2, _f, _g;
     super();
     __privateAdd(this, _AnimatedQrSender_instances);
-    this.canvas = (_a = options.canvas) != null ? _a : null;
-    this.frameIntervalMs = (_b = options.frameIntervalMs) != null ? _b : DEFAULT_FRAME_INTERVAL_MS;
+    this.canvas = (_a2 = options.canvas) != null ? _a2 : null;
+    this.frameIntervalMs = (_b2 = options.frameIntervalMs) != null ? _b2 : DEFAULT_FRAME_INTERVAL_MS;
     this.chunkByteSize = (_c = options.chunkByteSize) != null ? _c : DEFAULT_CHUNK_BYTE_SIZE;
     this.payloadEncoding = (_d = options.payloadEncoding) != null ? _d : DEFAULT_PAYLOAD_ENCODING;
     this.symbolsPerFrame = (_e2 = options.symbolsPerFrame) != null ? _e2 : DEFAULT_SYMBOLS_PER_FRAME;
@@ -3030,13 +3030,13 @@ var AnimatedQrSender = class extends SimpleEmitter {
     this.canvas = canvas;
   }
   async prepare(fileLike, options = {}) {
-    var _a, _b, _c, _d, _e2;
+    var _a2, _b2, _c, _d, _e2;
     const transfer = await createTransferFrames(fileLike, {
-      chunkByteSize: (_a = options.chunkByteSize) != null ? _a : this.chunkByteSize,
+      chunkByteSize: (_a2 = options.chunkByteSize) != null ? _a2 : this.chunkByteSize,
       sessionId: options.sessionId,
       fileName: options.fileName,
       mimeType: options.mimeType,
-      payloadEncoding: (_b = options.payloadEncoding) != null ? _b : this.payloadEncoding,
+      payloadEncoding: (_b2 = options.payloadEncoding) != null ? _b2 : this.payloadEncoding,
       symbolsPerFrame: (_c = options.symbolsPerFrame) != null ? _c : this.symbolsPerFrame,
       parityBlockDataChunks: (_d = options.parityBlockDataChunks) != null ? _d : this.parityBlockDataChunks,
       frameIntervalMs: (_e2 = options.frameIntervalMs) != null ? _e2 : this.frameIntervalMs
@@ -3175,18 +3175,18 @@ function ensureTrailingSlash(value) {
   return value.endsWith("/") ? value : `${value}/`;
 }
 function getPageUrl() {
-  var _a;
-  if (typeof window !== "undefined" && typeof ((_a = window.location) == null ? void 0 : _a.href) === "string") {
+  var _a2;
+  if (typeof window !== "undefined" && typeof ((_a2 = window.location) == null ? void 0 : _a2.href) === "string") {
     return window.location.href;
   }
   return "";
 }
 function getInjectedModuleUrl() {
-  var _a;
+  var _a2;
   if (typeof __ADQ_MODULE_URL__ === "string" && __ADQ_MODULE_URL__) {
     return __ADQ_MODULE_URL__;
   }
-  if (typeof document !== "undefined" && ((_a = document.currentScript) == null ? void 0 : _a.src)) {
+  if (typeof document !== "undefined" && ((_a2 = document.currentScript) == null ? void 0 : _a2.src)) {
     return document.currentScript.src;
   }
   return "";
@@ -3765,7 +3765,7 @@ async function Mr(A = {}) {
     throw n.init(e, t), M2 = r, ir++, M2;
   }, Qe = () => ir, rt = (r) => {
     throw M2 || (M2 = r), M2;
-  }, et = () => mr(""), sr = {}, $r = (r) => {
+  }, et2 = () => mr(""), sr = {}, $r = (r) => {
     for (; r.length; ) {
       var e = r.pop(), t = r.pop();
       t(e);
@@ -4110,9 +4110,9 @@ async function Mr(A = {}) {
     r = r.replace(/p/g, "i");
     var n = W2[r];
     return n(e, ...t);
-  }, te2 = [], _2 = (r) => {
-    var e = te2[r];
-    return e || (te2[r] = e = Te2.get(r)), e;
+  }, te3 = [], _2 = (r) => {
+    var e = te3[r];
+    return e || (te3[r] = e = Te2.get(r)), e;
   }, Tt = function(r, e) {
     let t = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : [];
     if (r.includes("j"))
@@ -4569,7 +4569,7 @@ async function Mr(A = {}) {
       return `UTC${C}${w2}${m2}`;
     }, v2 = c2(o), y = c2(u);
     u < o ? (Z2(v2, t, 17), Z2(y, n, 17)) : (Z2(v2, n, 17), Z2(y, t, 17));
-  }, ln = () => 2147483648, cn = (r, e) => Math.ceil(r / e) * e, vn = (r) => {
+  }, ln2 = () => 2147483648, cn = (r, e) => Math.ceil(r / e) * e, vn = (r) => {
     var e = dr.buffer.byteLength, t = (r - e + 65535) / 65536 | 0;
     try {
       return dr.grow(t), zr(), 1;
@@ -4578,7 +4578,7 @@ async function Mr(A = {}) {
   }, dn = (r) => {
     var e = D2.length;
     r >>>= 0;
-    var t = ln();
+    var t = ln2();
     if (r > t)
       return false;
     for (var n = 1; n <= 4; n *= 2) {
@@ -4656,7 +4656,7 @@ async function Mr(A = {}) {
     q: Je,
     U: Qe,
     d: rt,
-    ba: et,
+    ba: et2,
     ta: nt,
     aa: it,
     oa: st,
@@ -5188,9 +5188,9 @@ function getRegionPenalty(region, detectedBounds) {
   return maxPenalty;
 }
 function takeNextPass(pendingPasses, detectedBounds) {
-  var _a, _b;
+  var _a2, _b2;
   if (pendingPasses.length <= 1 || detectedBounds.length === 0) {
-    return (_a = pendingPasses.shift()) != null ? _a : null;
+    return (_a2 = pendingPasses.shift()) != null ? _a2 : null;
   }
   let bestIndex = 0;
   let bestPenalty = Number.POSITIVE_INFINITY;
@@ -5201,7 +5201,7 @@ function takeNextPass(pendingPasses, detectedBounds) {
       bestIndex = index;
     }
   }
-  return (_b = pendingPasses.splice(bestIndex, 1)[0]) != null ? _b : null;
+  return (_b2 = pendingPasses.splice(bestIndex, 1)[0]) != null ? _b2 : null;
 }
 async function warmupZxingDecoder(wasmUrl) {
   return Se2({
@@ -5263,14 +5263,14 @@ var _ZxingDecoderController_instances, prepareInternal_fn, fallbackToMainThread_
 var ZxingDecoderController = class {
   constructor(options = {}) {
     __privateAdd(this, _ZxingDecoderController_instances);
-    var _a, _b, _c, _d;
+    var _a2, _b2, _c, _d;
     this.decoderAssetBaseUrl = resolveDecoderAssetBaseUrl(
-      (_a = options.decoderAssetBaseUrl) != null ? _a : null,
+      (_a2 = options.decoderAssetBaseUrl) != null ? _a2 : null,
       options.moduleUrl
     );
     this.workerUrl = resolveDecoderWorkerUrl(this.decoderAssetBaseUrl);
     this.wasmUrl = resolveDecoderWasmUrl(this.decoderAssetBaseUrl);
-    this.workerFactory = (_b = options.workerFactory) != null ? _b : typeof Worker === "function" ? Worker : null;
+    this.workerFactory = (_b2 = options.workerFactory) != null ? _b2 : typeof Worker === "function" ? Worker : null;
     this.warmupDecoder = (_c = options.warmupDecoder) != null ? _c : warmupZxingDecoder;
     this.decodeOnMainThread = (_d = options.decodeOnMainThread) != null ? _d : decodeImageDataWithZxing;
     this.mode = "uninitialized";
@@ -5286,10 +5286,10 @@ var ZxingDecoderController = class {
     return this.preparePromise;
   }
   async decodeImageData(imageData, passes, expectedSymbolsPerFrame) {
-    var _a;
+    var _a2;
     const preparation = await this.prepare();
     let modeChanged = preparation.modeChanged;
-    let reason = (_a = preparation.reason) != null ? _a : null;
+    let reason = (_a2 = preparation.reason) != null ? _a2 : null;
     if (this.mode === "worker" && this.worker) {
       try {
         const frameInputs2 = await __privateMethod(this, _ZxingDecoderController_instances, decodeWithWorker_fn).call(this, imageData, passes, expectedSymbolsPerFrame);
@@ -5368,8 +5368,8 @@ fallbackToMainThread_fn = async function(error) {
 startWorker_fn = async function() {
   this.worker = new this.workerFactory(this.workerUrl);
   this.worker.onmessage = (event) => {
-    var _a;
-    const payload = (_a = event.data) != null ? _a : {};
+    var _a2;
+    const payload = (_a2 = event.data) != null ? _a2 : {};
     const pending = this.pendingRequests.get(payload.id);
     if (!pending) {
       return;
@@ -5525,11 +5525,11 @@ function createDownloadLink(result, anchorElement = null) {
 var _AnimatedQrReceiver_instances, scanTick_fn, getExpectedSymbolsPerFrame_fn, dedupeFrameInputs_fn, emitDecoderMode_fn, readFrameInputs_fn;
 var AnimatedQrReceiver = class extends SimpleEmitter {
   constructor(options = {}) {
-    var _a, _b, _c, _d, _e2, _f, _g, _h, _i, _j, _k;
+    var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k;
     super();
     __privateAdd(this, _AnimatedQrReceiver_instances);
-    this.video = (_a = options.video) != null ? _a : null;
-    this.scanIntervalMs = (_b = options.scanIntervalMs) != null ? _b : 120;
+    this.video = (_a2 = options.video) != null ? _a2 : null;
+    this.scanIntervalMs = (_b2 = options.scanIntervalMs) != null ? _b2 : 120;
     this.autoStopOnComplete = (_c = options.autoStopOnComplete) != null ? _c : true;
     this.preferBarcodeDetector = (_d = options.preferBarcodeDetector) != null ? _d : true;
     this.maxSymbolsPerFrame = (_e2 = options.maxSymbolsPerFrame) != null ? _e2 : 4;
@@ -5616,7 +5616,7 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     return session ? createProgressPayload(session) : null;
   }
   ingestFrame(frameInput) {
-    var _a, _b;
+    var _a2, _b2;
     const frame = parseFrame(frameInput);
     if (!frame || !frame.sessionId) {
       return { accepted: false, frame: null, result: null };
@@ -5636,8 +5636,8 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
         }
       }
       session.chunkByteSize = frame.chunkByteSize;
-      session.symbolsPerFrame = (_a = frame.symbolsPerFrame) != null ? _a : 1;
-      session.parityBlockDataChunks = (_b = frame.parityBlockDataChunks) != null ? _b : 0;
+      session.symbolsPerFrame = (_a2 = frame.symbolsPerFrame) != null ? _a2 : 1;
+      session.parityBlockDataChunks = (_b2 = frame.parityBlockDataChunks) != null ? _b2 : 0;
       session.fileSize = frame.fileSize;
       session.mimeType = frame.mimeType;
       session.fileName = frame.fileName;
@@ -5773,13 +5773,13 @@ dedupeFrameInputs_fn = function(inputs) {
   return Array.from(unique.values());
 };
 emitDecoderMode_fn = function(state, force = false) {
-  var _a;
+  var _a2;
   if (!state || !force && !state.modeChanged) {
     return;
   }
   this.emit("decoder-mode", {
     mode: state.mode,
-    reason: (_a = state.reason) != null ? _a : null
+    reason: (_a2 = state.reason) != null ? _a2 : null
   });
 };
 readFrameInputs_fn = async function() {
@@ -5808,7 +5808,1631 @@ readFrameInputs_fn = async function() {
   __privateMethod(this, _AnimatedQrReceiver_instances, emitDecoderMode_fn).call(this, decoderState);
   return __privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, decoderState.frameInputs);
 };
+
+// node_modules/fflate/esm/browser.js
+var u8 = Uint8Array;
+var u16 = Uint16Array;
+var i32 = Int32Array;
+var fleb = new u8([
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  1,
+  1,
+  1,
+  2,
+  2,
+  2,
+  2,
+  3,
+  3,
+  3,
+  3,
+  4,
+  4,
+  4,
+  4,
+  5,
+  5,
+  5,
+  5,
+  0,
+  /* unused */
+  0,
+  0,
+  /* impossible */
+  0
+]);
+var fdeb = new u8([
+  0,
+  0,
+  0,
+  0,
+  1,
+  1,
+  2,
+  2,
+  3,
+  3,
+  4,
+  4,
+  5,
+  5,
+  6,
+  6,
+  7,
+  7,
+  8,
+  8,
+  9,
+  9,
+  10,
+  10,
+  11,
+  11,
+  12,
+  12,
+  13,
+  13,
+  /* unused */
+  0,
+  0
+]);
+var clim = new u8([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]);
+var freb = function(eb, start) {
+  var b2 = new u16(31);
+  for (var i = 0; i < 31; ++i) {
+    b2[i] = start += 1 << eb[i - 1];
+  }
+  var r = new i32(b2[30]);
+  for (var i = 1; i < 30; ++i) {
+    for (var j2 = b2[i]; j2 < b2[i + 1]; ++j2) {
+      r[j2] = j2 - b2[i] << 5 | i;
+    }
+  }
+  return { b: b2, r };
+};
+var _a = freb(fleb, 2);
+var fl = _a.b;
+var revfl = _a.r;
+fl[28] = 258, revfl[258] = 28;
+var _b = freb(fdeb, 0);
+var fd = _b.b;
+var revfd = _b.r;
+var rev = new u16(32768);
+for (i = 0; i < 32768; ++i) {
+  x = (i & 43690) >> 1 | (i & 21845) << 1;
+  x = (x & 52428) >> 2 | (x & 13107) << 2;
+  x = (x & 61680) >> 4 | (x & 3855) << 4;
+  rev[i] = ((x & 65280) >> 8 | (x & 255) << 8) >> 1;
+}
+var x;
+var i;
+var hMap = (function(cd, mb, r) {
+  var s = cd.length;
+  var i = 0;
+  var l2 = new u16(mb);
+  for (; i < s; ++i) {
+    if (cd[i])
+      ++l2[cd[i] - 1];
+  }
+  var le2 = new u16(mb);
+  for (i = 1; i < mb; ++i) {
+    le2[i] = le2[i - 1] + l2[i - 1] << 1;
+  }
+  var co;
+  if (r) {
+    co = new u16(1 << mb);
+    var rvb = 15 - mb;
+    for (i = 0; i < s; ++i) {
+      if (cd[i]) {
+        var sv = i << 4 | cd[i];
+        var r_1 = mb - cd[i];
+        var v2 = le2[cd[i] - 1]++ << r_1;
+        for (var m2 = v2 | (1 << r_1) - 1; v2 <= m2; ++v2) {
+          co[rev[v2] >> rvb] = sv;
+        }
+      }
+    }
+  } else {
+    co = new u16(s);
+    for (i = 0; i < s; ++i) {
+      if (cd[i]) {
+        co[i] = rev[le2[cd[i] - 1]++] >> 15 - cd[i];
+      }
+    }
+  }
+  return co;
+});
+var flt = new u8(288);
+for (i = 0; i < 144; ++i)
+  flt[i] = 8;
+var i;
+for (i = 144; i < 256; ++i)
+  flt[i] = 9;
+var i;
+for (i = 256; i < 280; ++i)
+  flt[i] = 7;
+var i;
+for (i = 280; i < 288; ++i)
+  flt[i] = 8;
+var i;
+var fdt = new u8(32);
+for (i = 0; i < 32; ++i)
+  fdt[i] = 5;
+var i;
+var flm = /* @__PURE__ */ hMap(flt, 9, 0);
+var flrm = /* @__PURE__ */ hMap(flt, 9, 1);
+var fdm = /* @__PURE__ */ hMap(fdt, 5, 0);
+var fdrm = /* @__PURE__ */ hMap(fdt, 5, 1);
+var max = function(a) {
+  var m2 = a[0];
+  for (var i = 1; i < a.length; ++i) {
+    if (a[i] > m2)
+      m2 = a[i];
+  }
+  return m2;
+};
+var bits = function(d, p2, m2) {
+  var o = p2 / 8 | 0;
+  return (d[o] | d[o + 1] << 8) >> (p2 & 7) & m2;
+};
+var bits16 = function(d, p2) {
+  var o = p2 / 8 | 0;
+  return (d[o] | d[o + 1] << 8 | d[o + 2] << 16) >> (p2 & 7);
+};
+var shft = function(p2) {
+  return (p2 + 7) / 8 | 0;
+};
+var slc = function(v2, s, e) {
+  if (s == null || s < 0)
+    s = 0;
+  if (e == null || e > v2.length)
+    e = v2.length;
+  return new u8(v2.subarray(s, e));
+};
+var ec = [
+  "unexpected EOF",
+  "invalid block type",
+  "invalid length/literal",
+  "invalid distance",
+  "stream finished",
+  "no stream handler",
+  ,
+  "no callback",
+  "invalid UTF-8 data",
+  "extra field too long",
+  "date not in range 1980-2099",
+  "filename too long",
+  "stream finishing",
+  "invalid zip data"
+  // determined by unknown compression method
+];
+var err = function(ind, msg, nt) {
+  var e = new Error(msg || ec[ind]);
+  e.code = ind;
+  if (Error.captureStackTrace)
+    Error.captureStackTrace(e, err);
+  if (!nt)
+    throw e;
+  return e;
+};
+var inflt = function(dat, st, buf, dict) {
+  var sl = dat.length, dl = dict ? dict.length : 0;
+  if (!sl || st.f && !st.l)
+    return buf || new u8(0);
+  var noBuf = !buf;
+  var resize = noBuf || st.i != 2;
+  var noSt = st.i;
+  if (noBuf)
+    buf = new u8(sl * 3);
+  var cbuf = function(l3) {
+    var bl = buf.length;
+    if (l3 > bl) {
+      var nbuf = new u8(Math.max(bl * 2, l3));
+      nbuf.set(buf);
+      buf = nbuf;
+    }
+  };
+  var final = st.f || 0, pos = st.p || 0, bt = st.b || 0, lm = st.l, dm = st.d, lbt = st.m, dbt = st.n;
+  var tbts = sl * 8;
+  do {
+    if (!lm) {
+      final = bits(dat, pos, 1);
+      var type = bits(dat, pos + 1, 3);
+      pos += 3;
+      if (!type) {
+        var s = shft(pos) + 4, l2 = dat[s - 4] | dat[s - 3] << 8, t = s + l2;
+        if (t > sl) {
+          if (noSt)
+            err(0);
+          break;
+        }
+        if (resize)
+          cbuf(bt + l2);
+        buf.set(dat.subarray(s, t), bt);
+        st.b = bt += l2, st.p = pos = t * 8, st.f = final;
+        continue;
+      } else if (type == 1)
+        lm = flrm, dm = fdrm, lbt = 9, dbt = 5;
+      else if (type == 2) {
+        var hLit = bits(dat, pos, 31) + 257, hcLen = bits(dat, pos + 10, 15) + 4;
+        var tl = hLit + bits(dat, pos + 5, 31) + 1;
+        pos += 14;
+        var ldt = new u8(tl);
+        var clt = new u8(19);
+        for (var i = 0; i < hcLen; ++i) {
+          clt[clim[i]] = bits(dat, pos + i * 3, 7);
+        }
+        pos += hcLen * 3;
+        var clb = max(clt), clbmsk = (1 << clb) - 1;
+        var clm = hMap(clt, clb, 1);
+        for (var i = 0; i < tl; ) {
+          var r = clm[bits(dat, pos, clbmsk)];
+          pos += r & 15;
+          var s = r >> 4;
+          if (s < 16) {
+            ldt[i++] = s;
+          } else {
+            var c2 = 0, n = 0;
+            if (s == 16)
+              n = 3 + bits(dat, pos, 3), pos += 2, c2 = ldt[i - 1];
+            else if (s == 17)
+              n = 3 + bits(dat, pos, 7), pos += 3;
+            else if (s == 18)
+              n = 11 + bits(dat, pos, 127), pos += 7;
+            while (n--)
+              ldt[i++] = c2;
+          }
+        }
+        var lt = ldt.subarray(0, hLit), dt = ldt.subarray(hLit);
+        lbt = max(lt);
+        dbt = max(dt);
+        lm = hMap(lt, lbt, 1);
+        dm = hMap(dt, dbt, 1);
+      } else
+        err(1);
+      if (pos > tbts) {
+        if (noSt)
+          err(0);
+        break;
+      }
+    }
+    if (resize)
+      cbuf(bt + 131072);
+    var lms = (1 << lbt) - 1, dms = (1 << dbt) - 1;
+    var lpos = pos;
+    for (; ; lpos = pos) {
+      var c2 = lm[bits16(dat, pos) & lms], sym = c2 >> 4;
+      pos += c2 & 15;
+      if (pos > tbts) {
+        if (noSt)
+          err(0);
+        break;
+      }
+      if (!c2)
+        err(2);
+      if (sym < 256)
+        buf[bt++] = sym;
+      else if (sym == 256) {
+        lpos = pos, lm = null;
+        break;
+      } else {
+        var add = sym - 254;
+        if (sym > 264) {
+          var i = sym - 257, b2 = fleb[i];
+          add = bits(dat, pos, (1 << b2) - 1) + fl[i];
+          pos += b2;
+        }
+        var d = dm[bits16(dat, pos) & dms], dsym = d >> 4;
+        if (!d)
+          err(3);
+        pos += d & 15;
+        var dt = fd[dsym];
+        if (dsym > 3) {
+          var b2 = fdeb[dsym];
+          dt += bits16(dat, pos) & (1 << b2) - 1, pos += b2;
+        }
+        if (pos > tbts) {
+          if (noSt)
+            err(0);
+          break;
+        }
+        if (resize)
+          cbuf(bt + 131072);
+        var end = bt + add;
+        if (bt < dt) {
+          var shift = dl - dt, dend = Math.min(dt, end);
+          if (shift + bt < 0)
+            err(3);
+          for (; bt < dend; ++bt)
+            buf[bt] = dict[shift + bt];
+        }
+        for (; bt < end; ++bt)
+          buf[bt] = buf[bt - dt];
+      }
+    }
+    st.l = lm, st.p = lpos, st.b = bt, st.f = final;
+    if (lm)
+      final = 1, st.m = lbt, st.d = dm, st.n = dbt;
+  } while (!final);
+  return bt != buf.length && noBuf ? slc(buf, 0, bt) : buf.subarray(0, bt);
+};
+var wbits = function(d, p2, v2) {
+  v2 <<= p2 & 7;
+  var o = p2 / 8 | 0;
+  d[o] |= v2;
+  d[o + 1] |= v2 >> 8;
+};
+var wbits16 = function(d, p2, v2) {
+  v2 <<= p2 & 7;
+  var o = p2 / 8 | 0;
+  d[o] |= v2;
+  d[o + 1] |= v2 >> 8;
+  d[o + 2] |= v2 >> 16;
+};
+var hTree = function(d, mb) {
+  var t = [];
+  for (var i = 0; i < d.length; ++i) {
+    if (d[i])
+      t.push({ s: i, f: d[i] });
+  }
+  var s = t.length;
+  var t2 = t.slice();
+  if (!s)
+    return { t: et, l: 0 };
+  if (s == 1) {
+    var v2 = new u8(t[0].s + 1);
+    v2[t[0].s] = 1;
+    return { t: v2, l: 1 };
+  }
+  t.sort(function(a, b2) {
+    return a.f - b2.f;
+  });
+  t.push({ s: -1, f: 25001 });
+  var l2 = t[0], r = t[1], i0 = 0, i1 = 1, i2 = 2;
+  t[0] = { s: -1, f: l2.f + r.f, l: l2, r };
+  while (i1 != s - 1) {
+    l2 = t[t[i0].f < t[i2].f ? i0++ : i2++];
+    r = t[i0 != i1 && t[i0].f < t[i2].f ? i0++ : i2++];
+    t[i1++] = { s: -1, f: l2.f + r.f, l: l2, r };
+  }
+  var maxSym = t2[0].s;
+  for (var i = 1; i < s; ++i) {
+    if (t2[i].s > maxSym)
+      maxSym = t2[i].s;
+  }
+  var tr = new u16(maxSym + 1);
+  var mbt = ln(t[i1 - 1], tr, 0);
+  if (mbt > mb) {
+    var i = 0, dt = 0;
+    var lft = mbt - mb, cst = 1 << lft;
+    t2.sort(function(a, b2) {
+      return tr[b2.s] - tr[a.s] || a.f - b2.f;
+    });
+    for (; i < s; ++i) {
+      var i2_1 = t2[i].s;
+      if (tr[i2_1] > mb) {
+        dt += cst - (1 << mbt - tr[i2_1]);
+        tr[i2_1] = mb;
+      } else
+        break;
+    }
+    dt >>= lft;
+    while (dt > 0) {
+      var i2_2 = t2[i].s;
+      if (tr[i2_2] < mb)
+        dt -= 1 << mb - tr[i2_2]++ - 1;
+      else
+        ++i;
+    }
+    for (; i >= 0 && dt; --i) {
+      var i2_3 = t2[i].s;
+      if (tr[i2_3] == mb) {
+        --tr[i2_3];
+        ++dt;
+      }
+    }
+    mbt = mb;
+  }
+  return { t: new u8(tr), l: mbt };
+};
+var ln = function(n, l2, d) {
+  return n.s == -1 ? Math.max(ln(n.l, l2, d + 1), ln(n.r, l2, d + 1)) : l2[n.s] = d;
+};
+var lc = function(c2) {
+  var s = c2.length;
+  while (s && !c2[--s])
+    ;
+  var cl = new u16(++s);
+  var cli = 0, cln = c2[0], cls = 1;
+  var w2 = function(v2) {
+    cl[cli++] = v2;
+  };
+  for (var i = 1; i <= s; ++i) {
+    if (c2[i] == cln && i != s)
+      ++cls;
+    else {
+      if (!cln && cls > 2) {
+        for (; cls > 138; cls -= 138)
+          w2(32754);
+        if (cls > 2) {
+          w2(cls > 10 ? cls - 11 << 5 | 28690 : cls - 3 << 5 | 12305);
+          cls = 0;
+        }
+      } else if (cls > 3) {
+        w2(cln), --cls;
+        for (; cls > 6; cls -= 6)
+          w2(8304);
+        if (cls > 2)
+          w2(cls - 3 << 5 | 8208), cls = 0;
+      }
+      while (cls--)
+        w2(cln);
+      cls = 1;
+      cln = c2[i];
+    }
+  }
+  return { c: cl.subarray(0, cli), n: s };
+};
+var clen = function(cf, cl) {
+  var l2 = 0;
+  for (var i = 0; i < cl.length; ++i)
+    l2 += cf[i] * cl[i];
+  return l2;
+};
+var wfblk = function(out, pos, dat) {
+  var s = dat.length;
+  var o = shft(pos + 2);
+  out[o] = s & 255;
+  out[o + 1] = s >> 8;
+  out[o + 2] = out[o] ^ 255;
+  out[o + 3] = out[o + 1] ^ 255;
+  for (var i = 0; i < s; ++i)
+    out[o + i + 4] = dat[i];
+  return (o + 4 + s) * 8;
+};
+var wblk = function(dat, out, final, syms, lf, df, eb, li, bs, bl, p2) {
+  wbits(out, p2++, final);
+  ++lf[256];
+  var _a2 = hTree(lf, 15), dlt = _a2.t, mlb = _a2.l;
+  var _b2 = hTree(df, 15), ddt = _b2.t, mdb = _b2.l;
+  var _c = lc(dlt), lclt = _c.c, nlc = _c.n;
+  var _d = lc(ddt), lcdt = _d.c, ndc = _d.n;
+  var lcfreq = new u16(19);
+  for (var i = 0; i < lclt.length; ++i)
+    ++lcfreq[lclt[i] & 31];
+  for (var i = 0; i < lcdt.length; ++i)
+    ++lcfreq[lcdt[i] & 31];
+  var _e2 = hTree(lcfreq, 7), lct = _e2.t, mlcb = _e2.l;
+  var nlcc = 19;
+  for (; nlcc > 4 && !lct[clim[nlcc - 1]]; --nlcc)
+    ;
+  var flen = bl + 5 << 3;
+  var ftlen = clen(lf, flt) + clen(df, fdt) + eb;
+  var dtlen = clen(lf, dlt) + clen(df, ddt) + eb + 14 + 3 * nlcc + clen(lcfreq, lct) + 2 * lcfreq[16] + 3 * lcfreq[17] + 7 * lcfreq[18];
+  if (bs >= 0 && flen <= ftlen && flen <= dtlen)
+    return wfblk(out, p2, dat.subarray(bs, bs + bl));
+  var lm, ll, dm, dl;
+  wbits(out, p2, 1 + (dtlen < ftlen)), p2 += 2;
+  if (dtlen < ftlen) {
+    lm = hMap(dlt, mlb, 0), ll = dlt, dm = hMap(ddt, mdb, 0), dl = ddt;
+    var llm = hMap(lct, mlcb, 0);
+    wbits(out, p2, nlc - 257);
+    wbits(out, p2 + 5, ndc - 1);
+    wbits(out, p2 + 10, nlcc - 4);
+    p2 += 14;
+    for (var i = 0; i < nlcc; ++i)
+      wbits(out, p2 + 3 * i, lct[clim[i]]);
+    p2 += 3 * nlcc;
+    var lcts = [lclt, lcdt];
+    for (var it = 0; it < 2; ++it) {
+      var clct = lcts[it];
+      for (var i = 0; i < clct.length; ++i) {
+        var len = clct[i] & 31;
+        wbits(out, p2, llm[len]), p2 += lct[len];
+        if (len > 15)
+          wbits(out, p2, clct[i] >> 5 & 127), p2 += clct[i] >> 12;
+      }
+    }
+  } else {
+    lm = flm, ll = flt, dm = fdm, dl = fdt;
+  }
+  for (var i = 0; i < li; ++i) {
+    var sym = syms[i];
+    if (sym > 255) {
+      var len = sym >> 18 & 31;
+      wbits16(out, p2, lm[len + 257]), p2 += ll[len + 257];
+      if (len > 7)
+        wbits(out, p2, sym >> 23 & 31), p2 += fleb[len];
+      var dst = sym & 31;
+      wbits16(out, p2, dm[dst]), p2 += dl[dst];
+      if (dst > 3)
+        wbits16(out, p2, sym >> 5 & 8191), p2 += fdeb[dst];
+    } else {
+      wbits16(out, p2, lm[sym]), p2 += ll[sym];
+    }
+  }
+  wbits16(out, p2, lm[256]);
+  return p2 + ll[256];
+};
+var deo = /* @__PURE__ */ new i32([65540, 131080, 131088, 131104, 262176, 1048704, 1048832, 2114560, 2117632]);
+var et = /* @__PURE__ */ new u8(0);
+var dflt = function(dat, lvl, plvl, pre, post, st) {
+  var s = st.z || dat.length;
+  var o = new u8(pre + s + 5 * (1 + Math.ceil(s / 7e3)) + post);
+  var w2 = o.subarray(pre, o.length - post);
+  var lst = st.l;
+  var pos = (st.r || 0) & 7;
+  if (lvl) {
+    if (pos)
+      w2[0] = st.r >> 3;
+    var opt = deo[lvl - 1];
+    var n = opt >> 13, c2 = opt & 8191;
+    var msk_1 = (1 << plvl) - 1;
+    var prev = st.p || new u16(32768), head = st.h || new u16(msk_1 + 1);
+    var bs1_1 = Math.ceil(plvl / 3), bs2_1 = 2 * bs1_1;
+    var hsh = function(i2) {
+      return (dat[i2] ^ dat[i2 + 1] << bs1_1 ^ dat[i2 + 2] << bs2_1) & msk_1;
+    };
+    var syms = new i32(25e3);
+    var lf = new u16(288), df = new u16(32);
+    var lc_1 = 0, eb = 0, i = st.i || 0, li = 0, wi = st.w || 0, bs = 0;
+    for (; i + 2 < s; ++i) {
+      var hv = hsh(i);
+      var imod = i & 32767, pimod = head[hv];
+      prev[imod] = pimod;
+      head[hv] = imod;
+      if (wi <= i) {
+        var rem = s - i;
+        if ((lc_1 > 7e3 || li > 24576) && (rem > 423 || !lst)) {
+          pos = wblk(dat, w2, 0, syms, lf, df, eb, li, bs, i - bs, pos);
+          li = lc_1 = eb = 0, bs = i;
+          for (var j2 = 0; j2 < 286; ++j2)
+            lf[j2] = 0;
+          for (var j2 = 0; j2 < 30; ++j2)
+            df[j2] = 0;
+        }
+        var l2 = 2, d = 0, ch_1 = c2, dif = imod - pimod & 32767;
+        if (rem > 2 && hv == hsh(i - dif)) {
+          var maxn = Math.min(n, rem) - 1;
+          var maxd = Math.min(32767, i);
+          var ml = Math.min(258, rem);
+          while (dif <= maxd && --ch_1 && imod != pimod) {
+            if (dat[i + l2] == dat[i + l2 - dif]) {
+              var nl = 0;
+              for (; nl < ml && dat[i + nl] == dat[i + nl - dif]; ++nl)
+                ;
+              if (nl > l2) {
+                l2 = nl, d = dif;
+                if (nl > maxn)
+                  break;
+                var mmd = Math.min(dif, nl - 2);
+                var md = 0;
+                for (var j2 = 0; j2 < mmd; ++j2) {
+                  var ti = i - dif + j2 & 32767;
+                  var pti = prev[ti];
+                  var cd = ti - pti & 32767;
+                  if (cd > md)
+                    md = cd, pimod = ti;
+                }
+              }
+            }
+            imod = pimod, pimod = prev[imod];
+            dif += imod - pimod & 32767;
+          }
+        }
+        if (d) {
+          syms[li++] = 268435456 | revfl[l2] << 18 | revfd[d];
+          var lin = revfl[l2] & 31, din = revfd[d] & 31;
+          eb += fleb[lin] + fdeb[din];
+          ++lf[257 + lin];
+          ++df[din];
+          wi = i + l2;
+          ++lc_1;
+        } else {
+          syms[li++] = dat[i];
+          ++lf[dat[i]];
+        }
+      }
+    }
+    for (i = Math.max(i, wi); i < s; ++i) {
+      syms[li++] = dat[i];
+      ++lf[dat[i]];
+    }
+    pos = wblk(dat, w2, lst, syms, lf, df, eb, li, bs, i - bs, pos);
+    if (!lst) {
+      st.r = pos & 7 | w2[pos / 8 | 0] << 3;
+      pos -= 7;
+      st.h = head, st.p = prev, st.i = i, st.w = wi;
+    }
+  } else {
+    for (var i = st.w || 0; i < s + lst; i += 65535) {
+      var e = i + 65535;
+      if (e >= s) {
+        w2[pos / 8 | 0] = lst;
+        e = s;
+      }
+      pos = wfblk(w2, pos + 1, dat.subarray(i, e));
+    }
+    st.i = s;
+  }
+  return slc(o, 0, pre + shft(pos) + post);
+};
+var crct = /* @__PURE__ */ (function() {
+  var t = new Int32Array(256);
+  for (var i = 0; i < 256; ++i) {
+    var c2 = i, k2 = 9;
+    while (--k2)
+      c2 = (c2 & 1 && -306674912) ^ c2 >>> 1;
+    t[i] = c2;
+  }
+  return t;
+})();
+var crc = function() {
+  var c2 = -1;
+  return {
+    p: function(d) {
+      var cr = c2;
+      for (var i = 0; i < d.length; ++i)
+        cr = crct[cr & 255 ^ d[i]] ^ cr >>> 8;
+      c2 = cr;
+    },
+    d: function() {
+      return ~c2;
+    }
+  };
+};
+var dopt = function(dat, opt, pre, post, st) {
+  if (!st) {
+    st = { l: 1 };
+    if (opt.dictionary) {
+      var dict = opt.dictionary.subarray(-32768);
+      var newDat = new u8(dict.length + dat.length);
+      newDat.set(dict);
+      newDat.set(dat, dict.length);
+      dat = newDat;
+      st.w = dict.length;
+    }
+  }
+  return dflt(dat, opt.level == null ? 6 : opt.level, opt.mem == null ? st.l ? Math.ceil(Math.max(8, Math.min(13, Math.log(dat.length))) * 1.5) : 20 : 12 + opt.mem, pre, post, st);
+};
+var mrg = function(a, b2) {
+  var o = {};
+  for (var k2 in a)
+    o[k2] = a[k2];
+  for (var k2 in b2)
+    o[k2] = b2[k2];
+  return o;
+};
+var wbytes = function(d, b2, v2) {
+  for (; v2; ++b2)
+    d[b2] = v2, v2 >>>= 8;
+};
+var gzh = function(c2, o) {
+  var fn = o.filename;
+  c2[0] = 31, c2[1] = 139, c2[2] = 8, c2[8] = o.level < 2 ? 4 : o.level == 9 ? 2 : 0, c2[9] = 3;
+  if (o.mtime != 0)
+    wbytes(c2, 4, Math.floor(new Date(o.mtime || Date.now()) / 1e3));
+  if (fn) {
+    c2[3] = 8;
+    for (var i = 0; i <= fn.length; ++i)
+      c2[i + 10] = fn.charCodeAt(i);
+  }
+};
+var gzs = function(d) {
+  if (d[0] != 31 || d[1] != 139 || d[2] != 8)
+    err(6, "invalid gzip data");
+  var flg = d[3];
+  var st = 10;
+  if (flg & 4)
+    st += (d[10] | d[11] << 8) + 2;
+  for (var zs = (flg >> 3 & 1) + (flg >> 4 & 1); zs > 0; zs -= !d[st++])
+    ;
+  return st + (flg & 2);
+};
+var gzl = function(d) {
+  var l2 = d.length;
+  return (d[l2 - 4] | d[l2 - 3] << 8 | d[l2 - 2] << 16 | d[l2 - 1] << 24) >>> 0;
+};
+var gzhl = function(o) {
+  return 10 + (o.filename ? o.filename.length + 1 : 0);
+};
+function deflateSync(data, opts) {
+  return dopt(data, opts || {}, 0, 0);
+}
+function gzipSync(data, opts) {
+  if (!opts)
+    opts = {};
+  var c2 = crc(), l2 = data.length;
+  c2.p(data);
+  var d = dopt(data, opts, gzhl(opts), 8), s = d.length;
+  return gzh(d, opts), wbytes(d, s - 8, c2.d()), wbytes(d, s - 4, l2), d;
+}
+function gunzipSync(data, opts) {
+  var st = gzs(data);
+  if (st + 8 > data.length)
+    err(6, "invalid gzip data");
+  return inflt(data.subarray(st, -8), { i: 2 }, opts && opts.out || new u8(gzl(data)), opts && opts.dictionary);
+}
+var fltn = function(d, p2, t, o) {
+  for (var k2 in d) {
+    var val = d[k2], n = p2 + k2, op = o;
+    if (Array.isArray(val))
+      op = mrg(o, val[1]), val = val[0];
+    if (val instanceof u8)
+      t[n] = [val, op];
+    else {
+      t[n += "/"] = [new u8(0), op];
+      fltn(val, n, t, o);
+    }
+  }
+};
+var te2 = typeof TextEncoder != "undefined" && /* @__PURE__ */ new TextEncoder();
+var td = typeof TextDecoder != "undefined" && /* @__PURE__ */ new TextDecoder();
+var tds = 0;
+try {
+  td.decode(et, { stream: true });
+  tds = 1;
+} catch (e) {
+}
+function strToU8(str, latin1) {
+  if (latin1) {
+    var ar_1 = new u8(str.length);
+    for (var i = 0; i < str.length; ++i)
+      ar_1[i] = str.charCodeAt(i);
+    return ar_1;
+  }
+  if (te2)
+    return te2.encode(str);
+  var l2 = str.length;
+  var ar = new u8(str.length + (str.length >> 1));
+  var ai = 0;
+  var w2 = function(v2) {
+    ar[ai++] = v2;
+  };
+  for (var i = 0; i < l2; ++i) {
+    if (ai + 5 > ar.length) {
+      var n = new u8(ai + 8 + (l2 - i << 1));
+      n.set(ar);
+      ar = n;
+    }
+    var c2 = str.charCodeAt(i);
+    if (c2 < 128 || latin1)
+      w2(c2);
+    else if (c2 < 2048)
+      w2(192 | c2 >> 6), w2(128 | c2 & 63);
+    else if (c2 > 55295 && c2 < 57344)
+      c2 = 65536 + (c2 & 1023 << 10) | str.charCodeAt(++i) & 1023, w2(240 | c2 >> 18), w2(128 | c2 >> 12 & 63), w2(128 | c2 >> 6 & 63), w2(128 | c2 & 63);
+    else
+      w2(224 | c2 >> 12), w2(128 | c2 >> 6 & 63), w2(128 | c2 & 63);
+  }
+  return slc(ar, 0, ai);
+}
+var exfl = function(ex) {
+  var le2 = 0;
+  if (ex) {
+    for (var k2 in ex) {
+      var l2 = ex[k2].length;
+      if (l2 > 65535)
+        err(9);
+      le2 += l2 + 4;
+    }
+  }
+  return le2;
+};
+var wzh = function(d, b2, f, fn, u, c2, ce2, co) {
+  var fl2 = fn.length, ex = f.extra, col = co && co.length;
+  var exl = exfl(ex);
+  wbytes(d, b2, ce2 != null ? 33639248 : 67324752), b2 += 4;
+  if (ce2 != null)
+    d[b2++] = 20, d[b2++] = f.os;
+  d[b2] = 20, b2 += 2;
+  d[b2++] = f.flag << 1 | (c2 < 0 && 8), d[b2++] = u && 8;
+  d[b2++] = f.compression & 255, d[b2++] = f.compression >> 8;
+  var dt = new Date(f.mtime == null ? Date.now() : f.mtime), y = dt.getFullYear() - 1980;
+  if (y < 0 || y > 119)
+    err(10);
+  wbytes(d, b2, y << 25 | dt.getMonth() + 1 << 21 | dt.getDate() << 16 | dt.getHours() << 11 | dt.getMinutes() << 5 | dt.getSeconds() >> 1), b2 += 4;
+  if (c2 != -1) {
+    wbytes(d, b2, f.crc);
+    wbytes(d, b2 + 4, c2 < 0 ? -c2 - 2 : c2);
+    wbytes(d, b2 + 8, f.size);
+  }
+  wbytes(d, b2 + 12, fl2);
+  wbytes(d, b2 + 14, exl), b2 += 16;
+  if (ce2 != null) {
+    wbytes(d, b2, col);
+    wbytes(d, b2 + 6, f.attrs);
+    wbytes(d, b2 + 10, ce2), b2 += 14;
+  }
+  d.set(fn, b2);
+  b2 += fl2;
+  if (exl) {
+    for (var k2 in ex) {
+      var exf = ex[k2], l2 = exf.length;
+      wbytes(d, b2, +k2);
+      wbytes(d, b2 + 2, l2);
+      d.set(exf, b2 + 4), b2 += 4 + l2;
+    }
+  }
+  if (col)
+    d.set(co, b2), b2 += col;
+  return b2;
+};
+var wzf = function(o, b2, c2, d, e) {
+  wbytes(o, b2, 101010256);
+  wbytes(o, b2 + 8, c2);
+  wbytes(o, b2 + 10, c2);
+  wbytes(o, b2 + 12, d);
+  wbytes(o, b2 + 16, e);
+};
+function zipSync(data, opts) {
+  if (!opts)
+    opts = {};
+  var r = {};
+  var files = [];
+  fltn(data, "", r, opts);
+  var o = 0;
+  var tot = 0;
+  for (var fn in r) {
+    var _a2 = r[fn], file = _a2[0], p2 = _a2[1];
+    var compression = p2.level == 0 ? 0 : 8;
+    var f = strToU8(fn), s = f.length;
+    var com = p2.comment, m2 = com && strToU8(com), ms = m2 && m2.length;
+    var exl = exfl(p2.extra);
+    if (s > 65535)
+      err(11);
+    var d = compression ? deflateSync(file, p2) : file, l2 = d.length;
+    var c2 = crc();
+    c2.p(file);
+    files.push(mrg(p2, {
+      size: file.length,
+      crc: c2.d(),
+      c: d,
+      f,
+      m: m2,
+      u: s != fn.length || m2 && com.length != ms,
+      o,
+      compression
+    }));
+    o += 30 + s + exl + l2;
+    tot += 76 + 2 * (s + exl) + (ms || 0) + l2;
+  }
+  var out = new u8(tot + 22), oe2 = o, cdl = tot - o;
+  for (var i = 0; i < files.length; ++i) {
+    var f = files[i];
+    wzh(out, f.o, f, f.f, f.u, f.c.length);
+    var badd = 30 + f.f.length + exfl(f.extra);
+    out.set(f.c, f.o + badd);
+    wzh(out, o, f, f.f, f.u, f.c.length, f.o, f.m), o += 16 + badd + (f.m ? f.m.length : 0);
+  }
+  wzf(out, o, files.length, cdl, oe2);
+  return out;
+}
+
+// src/archive.js
+var ARCHIVE_MAGIC = "SARC1";
+var ARCHIVE_VERSION = 1;
+var ARCHIVE_MIME_TYPE = "application/vnd.animated-data-qr.sarc1";
+var ARCHIVE_EXTENSION = ".sarc1";
+var HEADER_SIZE = 40;
+var FOOTER_SIZE = 37;
+var HEADER_FLAGS = 0;
+var DEFAULT_RAW_FALLBACK_THRESHOLD_BYTES = 1024;
+var DEFAULT_MAX_FILE_COUNT = 4096;
+var DEFAULT_MAX_INPUT_BYTES = 128 * 1024 * 1024;
+var DEFAULT_MAX_FILE_BYTES = 64 * 1024 * 1024;
+var ARCHIVE_PROFILES = Object.freeze({
+  max: Object.freeze({
+    compressionLevel: 6,
+    maxBlockBytes: 8 * 1024 * 1024
+  }),
+  extreme: Object.freeze({
+    compressionLevel: 9,
+    maxBlockBytes: 16 * 1024 * 1024
+  }),
+  ultra: Object.freeze({
+    compressionLevel: 9,
+    maxBlockBytes: 32 * 1024 * 1024
+  })
+});
+var TEXT_EXTENSIONS = /* @__PURE__ */ new Set([
+  "c",
+  "cc",
+  "cpp",
+  "cs",
+  "css",
+  "csv",
+  "go",
+  "h",
+  "hpp",
+  "html",
+  "java",
+  "js",
+  "json",
+  "jsx",
+  "md",
+  "mjs",
+  "py",
+  "rb",
+  "rs",
+  "sh",
+  "sql",
+  "svg",
+  "toml",
+  "ts",
+  "tsx",
+  "txt",
+  "xml",
+  "yaml",
+  "yml"
+]);
+var textEncoder2 = new TextEncoder();
+var textDecoder = new TextDecoder();
+function assertCrypto() {
+  var _a2;
+  if (!((_a2 = globalThis.crypto) == null ? void 0 : _a2.subtle)) {
+    throw new Error("Web Crypto is required for archive integrity checks");
+  }
+}
+function writeFixedAscii(bytes, offset, value) {
+  bytes.set(textEncoder2.encode(value), offset);
+}
+function readFixedAscii(bytes, offset, length) {
+  return textDecoder.decode(bytes.subarray(offset, offset + length));
+}
+function setUint64(view, offset, value) {
+  view.setBigUint64(offset, BigInt(value), true);
+}
+function getUint64(view, offset) {
+  const value = Number(view.getBigUint64(offset, true));
+  if (!Number.isSafeInteger(value)) {
+    throw new Error("Archive value exceeds supported range");
+  }
+  return value;
+}
+function bytesToHex(bytes) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function hexToBytes(hex) {
+  if (typeof hex !== "string" || hex.length % 2 !== 0 || /[^0-9a-f]/i.test(hex)) {
+    throw new Error("Invalid hex input");
+  }
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < hex.length; index += 2) {
+    bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16);
+  }
+  return bytes;
+}
+async function sha256Hex(bytes) {
+  assertCrypto();
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return bytesToHex(new Uint8Array(digest));
+}
+function sanitizeNameSegment(segment, { allowSpaces = true } = {}) {
+  if (typeof segment !== "string") {
+    throw new Error("Path segment must be a string");
+  }
+  const trimmed = segment.trim();
+  if (!trimmed) {
+    throw new Error("Path segment cannot be empty");
+  }
+  if (trimmed === "." || trimmed === "..") {
+    throw new Error("Relative traversal segments are not allowed");
+  }
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+    throw new Error("Control characters are not allowed in file paths");
+  }
+  if (/[\\/]/.test(trimmed)) {
+    throw new Error("Path segments cannot contain slashes");
+  }
+  if (/[:*?"<>|]/.test(trimmed)) {
+    throw new Error("Unsafe path characters are not allowed");
+  }
+  if (!allowSpaces && /\s/.test(trimmed)) {
+    throw new Error("Whitespace is not allowed in this path segment");
+  }
+  return trimmed;
+}
+function safeFileStem(name, fallback = "transfer-folder") {
+  if (typeof name !== "string" || !name.trim()) {
+    return fallback;
+  }
+  const normalized = name.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, "-").trim().replace(/\s+/g, " ");
+  return normalized || fallback;
+}
+function sanitizeRelativePath(path) {
+  if (typeof path !== "string" || !path.trim()) {
+    throw new Error("A non-empty relative path is required");
+  }
+  if (/^[a-zA-Z]:/.test(path) || path.startsWith("/") || path.startsWith("\\")) {
+    throw new Error("Absolute paths are not allowed");
+  }
+  const normalized = path.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean).map((segment) => sanitizeNameSegment(segment));
+  if (segments.length === 0) {
+    throw new Error("Relative path must contain at least one segment");
+  }
+  return segments.join("/");
+}
+function getInputPath(input, index) {
+  const rawPath = typeof input.webkitRelativePath === "string" && input.webkitRelativePath ? input.webkitRelativePath : typeof input.name === "string" && input.name ? input.name : `file-${index + 1}.bin`;
+  return sanitizeRelativePath(rawPath);
+}
+function getCommonRoot(paths) {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return null;
+  }
+  const splitPaths = paths.map((path) => path.split("/"));
+  if (splitPaths.some((segments) => segments.length < 2)) {
+    return null;
+  }
+  const firstSegment = splitPaths[0][0];
+  if (!splitPaths.every((segments) => segments[0] === firstSegment)) {
+    return null;
+  }
+  return sanitizeNameSegment(firstSegment);
+}
+function classifyGroupKind(entry) {
+  const path = entry.path.toLowerCase();
+  const extension = path.includes(".") ? path.slice(path.lastIndexOf(".") + 1) : "";
+  if (extension === "pdf") {
+    return "pdf";
+  }
+  if (extension === "zip") {
+    return "zip";
+  }
+  if (TEXT_EXTENSIONS.has(extension)) {
+    if (["js", "jsx", "ts", "tsx", "css", "html"].includes(extension)) {
+      return "web-code";
+    }
+    if (["json", "yaml", "yml", "xml", "toml", "csv"].includes(extension)) {
+      return "structured-text";
+    }
+    return "text-code";
+  }
+  if (typeof entry.mimeType === "string" && entry.mimeType.startsWith("text/")) {
+    return "text-code";
+  }
+  return "binary";
+}
+function sortEntries(entries) {
+  entries.sort((left, right) => {
+    const leftExtension = left.path.includes(".") ? left.path.slice(left.path.lastIndexOf(".") + 1) : "";
+    const rightExtension = right.path.includes(".") ? right.path.slice(right.path.lastIndexOf(".") + 1) : "";
+    return leftExtension.localeCompare(rightExtension) || left.path.localeCompare(right.path) || left.size - right.size;
+  });
+}
+function planBlocks(entries, maxBlockBytes) {
+  var _a2;
+  const groups = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const list = (_a2 = groups.get(entry.groupKind)) != null ? _a2 : [];
+    list.push(entry);
+    groups.set(entry.groupKind, list);
+  }
+  const planned = [];
+  let blockId = 0;
+  for (const [groupKind, groupEntries] of groups.entries()) {
+    sortEntries(groupEntries);
+    let currentEntries = [];
+    let currentSize = 0;
+    for (const entry of groupEntries) {
+      if (currentEntries.length > 0 && currentSize + entry.size > maxBlockBytes) {
+        planned.push({
+          blockId,
+          groupKind,
+          entries: currentEntries,
+          uncompressedSize: currentSize
+        });
+        blockId += 1;
+        currentEntries = [];
+        currentSize = 0;
+      }
+      currentEntries.push(entry);
+      currentSize += entry.size;
+    }
+    if (currentEntries.length > 0) {
+      planned.push({
+        blockId,
+        groupKind,
+        entries: currentEntries,
+        uncompressedSize: currentSize
+      });
+      blockId += 1;
+    }
+  }
+  return planned;
+}
+function createHeader({ blockCount, manifestOffset, manifestLength, totalInputBytes, fileCount }) {
+  const bytes = new Uint8Array(HEADER_SIZE);
+  const view = new DataView(bytes.buffer);
+  writeFixedAscii(bytes, 0, ARCHIVE_MAGIC);
+  view.setUint8(5, ARCHIVE_VERSION);
+  view.setUint16(6, HEADER_FLAGS, true);
+  view.setUint32(8, blockCount, true);
+  setUint64(view, 12, manifestOffset);
+  setUint64(view, 20, manifestLength);
+  setUint64(view, 28, totalInputBytes);
+  view.setUint32(36, fileCount, true);
+  return bytes;
+}
+function parseHeader(bytes) {
+  if (bytes.length < HEADER_SIZE) {
+    throw new Error("Archive is too small to contain a valid header");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const magic = readFixedAscii(bytes, 0, 5);
+  if (magic !== ARCHIVE_MAGIC) {
+    throw new Error("Archive magic mismatch");
+  }
+  const version = view.getUint8(5);
+  if (version !== ARCHIVE_VERSION) {
+    throw new Error(`Unsupported archive version: ${version}`);
+  }
+  return {
+    blockCount: view.getUint32(8, true),
+    manifestOffset: getUint64(view, 12),
+    manifestLength: getUint64(view, 20),
+    totalInputBytes: getUint64(view, 28),
+    fileCount: view.getUint32(36, true)
+  };
+}
+function createFooter(manifestSha256Bytes) {
+  const footer = new Uint8Array(FOOTER_SIZE);
+  footer.set(manifestSha256Bytes, 0);
+  writeFixedAscii(footer, 32, ARCHIVE_MAGIC);
+  return footer;
+}
+function parseFooter(bytes) {
+  if (bytes.length < FOOTER_SIZE) {
+    throw new Error("Archive is too small to contain a valid footer");
+  }
+  const footer = bytes.subarray(bytes.length - FOOTER_SIZE);
+  if (readFixedAscii(footer, 32, 5) !== ARCHIVE_MAGIC) {
+    throw new Error("Archive footer magic mismatch");
+  }
+  return {
+    manifestSha256: bytesToHex(footer.subarray(0, 32))
+  };
+}
+function buildZipTree(extractedArchive) {
+  var _a2;
+  const tree = {};
+  for (const file of extractedArchive.files) {
+    const segments = [extractedArchive.rootName, ...file.path.split("/")];
+    let cursor = tree;
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = sanitizeNameSegment(segments[index]);
+      if (index === segments.length - 1) {
+        cursor[segment] = new Uint8Array(file.bytes);
+        continue;
+      }
+      cursor[segment] = (_a2 = cursor[segment]) != null ? _a2 : {};
+      cursor = cursor[segment];
+    }
+  }
+  return tree;
+}
+async function createStoredArchiveBlock(block, options) {
+  var _a2, _b2;
+  const chunks = [];
+  const manifestFiles = [];
+  let offsetInBlock = 0;
+  let processedBytes = 0;
+  for (const entry of block.entries) {
+    const bytes = new Uint8Array(await entry.input.arrayBuffer());
+    const fileHash = await sha256Hex(bytes);
+    chunks.push(bytes);
+    manifestFiles.push({
+      path: entry.path,
+      size: entry.size,
+      mtime: entry.mtime,
+      mimeType: entry.mimeType,
+      groupKind: entry.groupKind,
+      blockId: block.blockId,
+      offsetInBlock,
+      sha256: fileHash
+    });
+    offsetInBlock += bytes.length;
+    processedBytes += bytes.length;
+    (_a2 = options.onProgress) == null ? void 0 : _a2.call(options, {
+      phase: "scan",
+      processedBytes: options.progressBaseBytes + processedBytes,
+      totalBytes: options.totalInputBytes,
+      currentFile: entry.path,
+      currentBlockId: block.blockId
+    });
+  }
+  const rawBytes = concatChunks(chunks, block.uncompressedSize);
+  (_b2 = options.onProgress) == null ? void 0 : _b2.call(options, {
+    phase: "compress",
+    processedBytes: options.progressBaseBytes + processedBytes,
+    totalBytes: options.totalInputBytes,
+    currentBlockId: block.blockId
+  });
+  const compressedBytes = gzipSync(rawBytes, {
+    level: options.compressionLevel,
+    mtime: 0
+  });
+  const useRaw = compressedBytes.length >= rawBytes.length - options.rawFallbackThresholdBytes;
+  const codec = useRaw ? "raw" : "gzip";
+  const storedBytes = useRaw ? rawBytes : compressedBytes;
+  const storedHash = await sha256Hex(storedBytes);
+  return {
+    blockId: block.blockId,
+    groupKind: block.groupKind,
+    codec,
+    storedBytes,
+    manifestFiles,
+    manifestBlock: {
+      blockId: block.blockId,
+      codec,
+      groupKind: block.groupKind,
+      compressedOffset: 0,
+      compressedSize: storedBytes.length,
+      uncompressedSize: rawBytes.length,
+      fileCount: manifestFiles.length,
+      sha256: storedHash
+    }
+  };
+}
+function normalizeArchiveInputs(inputs, options) {
+  const list = Array.from(inputs != null ? inputs : []);
+  if (list.length === 0) {
+    throw new Error("At least one file is required to create a folder archive");
+  }
+  if (list.length > options.maxFileCount) {
+    throw new Error(`Too many files selected. Limit: ${options.maxFileCount}`);
+  }
+  let totalInputBytes = 0;
+  const originalPaths = [];
+  const normalized = list.map((input, index) => {
+    if (!input || typeof input.arrayBuffer !== "function") {
+      throw new TypeError("Archive inputs must provide arrayBuffer()");
+    }
+    const size = Number.isFinite(input.size) ? input.size : 0;
+    if (size < 0 || !Number.isSafeInteger(size)) {
+      throw new Error("Each archive input must expose a safe integer size");
+    }
+    if (size > options.maxFileBytes) {
+      throw new Error(`File exceeds the per-file limit: ${input.name || `file-${index + 1}`}`);
+    }
+    totalInputBytes += size;
+    if (totalInputBytes > options.maxInputBytes) {
+      throw new Error(`Folder input exceeds the maximum supported size of ${options.maxInputBytes} bytes`);
+    }
+    const originalPath = getInputPath(input, index);
+    originalPaths.push(originalPath);
+    return {
+      input,
+      originalPath,
+      size,
+      mtime: Number.isFinite(input.lastModified) ? input.lastModified : 0,
+      mimeType: typeof input.type === "string" && input.type ? input.type : "application/octet-stream"
+    };
+  });
+  const commonRoot = options.rootName ? sanitizeNameSegment(options.rootName) : getCommonRoot(originalPaths);
+  const rootName = commonRoot != null ? commonRoot : safeFileStem(options.rootName || "transfer-folder");
+  const seenPaths = /* @__PURE__ */ new Set();
+  const entries = normalized.map((entry) => {
+    const relativePath = commonRoot && entry.originalPath.startsWith(`${commonRoot}/`) ? entry.originalPath.slice(commonRoot.length + 1) : entry.originalPath;
+    const path = sanitizeRelativePath(relativePath);
+    if (seenPaths.has(path)) {
+      throw new Error(`Duplicate relative path detected: ${path}`);
+    }
+    seenPaths.add(path);
+    const archiveEntry = {
+      input: entry.input,
+      path,
+      size: entry.size,
+      mtime: entry.mtime,
+      mimeType: entry.mimeType
+    };
+    archiveEntry.groupKind = classifyGroupKind(archiveEntry);
+    return archiveEntry;
+  });
+  return {
+    rootName,
+    totalInputBytes,
+    entries
+  };
+}
+function resolveArchiveOptions(options = {}) {
+  var _a2, _b2, _c, _d, _e2, _f, _g;
+  const profileName = (_a2 = options.profile) != null ? _a2 : "extreme";
+  const profile = ARCHIVE_PROFILES[profileName];
+  if (!profile) {
+    throw new Error(`Unsupported archive profile: ${profileName}`);
+  }
+  return {
+    profile: profileName,
+    compressionLevel: (_b2 = options.compressionLevel) != null ? _b2 : profile.compressionLevel,
+    maxBlockBytes: (_c = options.maxBlockBytes) != null ? _c : profile.maxBlockBytes,
+    rawFallbackThresholdBytes: (_d = options.rawFallbackThresholdBytes) != null ? _d : DEFAULT_RAW_FALLBACK_THRESHOLD_BYTES,
+    maxFileCount: (_e2 = options.maxFileCount) != null ? _e2 : DEFAULT_MAX_FILE_COUNT,
+    maxInputBytes: (_f = options.maxInputBytes) != null ? _f : DEFAULT_MAX_INPUT_BYTES,
+    maxFileBytes: (_g = options.maxFileBytes) != null ? _g : DEFAULT_MAX_FILE_BYTES,
+    rootName: options.rootName,
+    onProgress: typeof options.onProgress === "function" ? options.onProgress : null
+  };
+}
+async function createArchive(inputs, options = {}) {
+  var _a2;
+  const resolvedOptions = resolveArchiveOptions(options);
+  const normalized = normalizeArchiveInputs(inputs, resolvedOptions);
+  const blocks = planBlocks(normalized.entries, resolvedOptions.maxBlockBytes);
+  const manifestBlocks = [];
+  const manifestFiles = [];
+  const blockBytes = [];
+  let processedBase = 0;
+  for (const block of blocks) {
+    const storedBlock = await createStoredArchiveBlock(block, {
+      compressionLevel: resolvedOptions.compressionLevel,
+      rawFallbackThresholdBytes: resolvedOptions.rawFallbackThresholdBytes,
+      onProgress: resolvedOptions.onProgress,
+      totalInputBytes: normalized.totalInputBytes,
+      progressBaseBytes: processedBase
+    });
+    processedBase += block.uncompressedSize;
+    blockBytes.push(storedBlock.storedBytes);
+    manifestBlocks.push(storedBlock.manifestBlock);
+    manifestFiles.push(...storedBlock.manifestFiles);
+  }
+  let compressedOffset = HEADER_SIZE;
+  for (const manifestBlock of manifestBlocks) {
+    manifestBlock.compressedOffset = compressedOffset;
+    compressedOffset += manifestBlock.compressedSize;
+  }
+  const manifest = {
+    format: ARCHIVE_MAGIC,
+    version: ARCHIVE_VERSION,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    rootName: normalized.rootName,
+    settings: {
+      profile: resolvedOptions.profile,
+      codec: "gzip",
+      solid: true,
+      compressionLevel: resolvedOptions.compressionLevel,
+      maxBlockBytes: resolvedOptions.maxBlockBytes,
+      rawFallbackThresholdBytes: resolvedOptions.rawFallbackThresholdBytes
+    },
+    blocks: manifestBlocks,
+    files: manifestFiles
+  };
+  const manifestBytes = textEncoder2.encode(JSON.stringify(manifest));
+  const manifestSha256 = await sha256Hex(manifestBytes);
+  const footerBytes = createFooter(hexToBytes(manifestSha256));
+  const headerBytes = createHeader({
+    blockCount: manifestBlocks.length,
+    manifestOffset: HEADER_SIZE + blockBytes.reduce((sum, bytes) => sum + bytes.length, 0),
+    manifestLength: manifestBytes.length,
+    totalInputBytes: normalized.totalInputBytes,
+    fileCount: manifestFiles.length
+  });
+  (_a2 = resolvedOptions.onProgress) == null ? void 0 : _a2.call(resolvedOptions, {
+    phase: "finalize",
+    processedBytes: normalized.totalInputBytes,
+    totalBytes: normalized.totalInputBytes,
+    currentBlockId: manifestBlocks.length > 0 ? manifestBlocks.length - 1 : 0
+  });
+  const blob = new Blob([headerBytes, ...blockBytes, manifestBytes, footerBytes], {
+    type: ARCHIVE_MIME_TYPE
+  });
+  const fileName = `${safeFileStem(normalized.rootName)}${ARCHIVE_EXTENSION}`;
+  return {
+    blob,
+    fileName,
+    manifestPreview: {
+      format: ARCHIVE_MAGIC,
+      version: ARCHIVE_VERSION,
+      rootName: normalized.rootName,
+      fileCount: manifestFiles.length,
+      totalInputBytes: normalized.totalInputBytes,
+      archiveSize: blob.size,
+      blockCount: manifestBlocks.length
+    }
+  };
+}
+function validateManifest(manifest, header) {
+  if (!manifest || manifest.format !== ARCHIVE_MAGIC || manifest.version !== ARCHIVE_VERSION) {
+    throw new Error("Archive manifest is invalid");
+  }
+  if (!Array.isArray(manifest.blocks) || !Array.isArray(manifest.files)) {
+    throw new Error("Archive manifest is missing blocks or files");
+  }
+  if (manifest.blocks.length !== header.blockCount) {
+    throw new Error("Archive block count does not match the header");
+  }
+  if (manifest.files.length !== header.fileCount) {
+    throw new Error("Archive file count does not match the header");
+  }
+}
+async function extractArchive(archive, options = {}) {
+  const resolvedOptions = resolveArchiveOptions({
+    ...options,
+    rootName: void 0
+  });
+  const archiveBytes = new Uint8Array(await archive.arrayBuffer());
+  if (archiveBytes.length < HEADER_SIZE + FOOTER_SIZE) {
+    throw new Error("Archive is too small");
+  }
+  const header = parseHeader(archiveBytes);
+  const footer = parseFooter(archiveBytes);
+  if (header.manifestOffset < HEADER_SIZE || header.manifestOffset + header.manifestLength > archiveBytes.length - FOOTER_SIZE) {
+    throw new Error("Archive manifest offsets are invalid");
+  }
+  const manifestBytes = archiveBytes.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
+  const manifestSha256 = await sha256Hex(manifestBytes);
+  if (manifestSha256 !== footer.manifestSha256) {
+    throw new Error("Archive manifest integrity check failed");
+  }
+  const manifest = JSON.parse(textDecoder.decode(manifestBytes));
+  validateManifest(manifest, header);
+  const rootName = sanitizeNameSegment(manifest.rootName || "transfer-folder");
+  if (manifest.files.length > resolvedOptions.maxFileCount) {
+    throw new Error(`Archive exceeds the supported file count limit of ${resolvedOptions.maxFileCount}`);
+  }
+  const blocksById = /* @__PURE__ */ new Map();
+  for (const block of manifest.blocks) {
+    if (!Number.isInteger(block.blockId) || block.blockId < 0) {
+      throw new Error("Archive block id is invalid");
+    }
+    if (blocksById.has(block.blockId)) {
+      throw new Error(`Duplicate block id detected: ${block.blockId}`);
+    }
+    if (!Number.isInteger(block.compressedOffset) || !Number.isInteger(block.compressedSize) || !Number.isInteger(block.uncompressedSize) || block.compressedOffset < HEADER_SIZE || block.compressedSize < 0 || block.uncompressedSize < 0 || block.compressedOffset + block.compressedSize > header.manifestOffset) {
+      throw new Error("Archive block layout is invalid");
+    }
+    blocksById.set(block.blockId, block);
+  }
+  const extractedBlocks = /* @__PURE__ */ new Map();
+  for (const block of manifest.blocks) {
+    const storedBytes = archiveBytes.subarray(block.compressedOffset, block.compressedOffset + block.compressedSize);
+    const storedHash = await sha256Hex(storedBytes);
+    if (storedHash !== block.sha256) {
+      throw new Error(`Archive block checksum mismatch for block ${block.blockId}`);
+    }
+    let rawBytes;
+    if (block.codec === "raw") {
+      rawBytes = new Uint8Array(storedBytes);
+    } else if (block.codec === "gzip") {
+      rawBytes = gunzipSync(storedBytes);
+    } else {
+      throw new Error(`Unsupported archive codec: ${block.codec}`);
+    }
+    if (rawBytes.length !== block.uncompressedSize) {
+      throw new Error(`Archive block size mismatch for block ${block.blockId}`);
+    }
+    extractedBlocks.set(block.blockId, rawBytes);
+  }
+  let extractedTotalBytes = 0;
+  const seenPaths = /* @__PURE__ */ new Set();
+  const files = [];
+  for (const file of manifest.files) {
+    const path = sanitizeRelativePath(file.path);
+    if (seenPaths.has(path)) {
+      throw new Error(`Archive contains duplicate file path: ${path}`);
+    }
+    seenPaths.add(path);
+    const block = blocksById.get(file.blockId);
+    if (!block) {
+      throw new Error(`Archive references missing block ${file.blockId}`);
+    }
+    if (!Number.isInteger(file.offsetInBlock) || !Number.isInteger(file.size) || file.offsetInBlock < 0 || file.size < 0 || file.offsetInBlock + file.size > block.uncompressedSize) {
+      throw new Error(`Archive file offset is invalid for ${path}`);
+    }
+    extractedTotalBytes += file.size;
+    if (extractedTotalBytes > resolvedOptions.maxInputBytes) {
+      throw new Error(`Archive expands beyond the supported size limit of ${resolvedOptions.maxInputBytes} bytes`);
+    }
+    const rawBlock = extractedBlocks.get(file.blockId);
+    const fileBytes = rawBlock.slice(file.offsetInBlock, file.offsetInBlock + file.size);
+    const fileHash = await sha256Hex(fileBytes);
+    if (fileHash !== file.sha256) {
+      throw new Error(`Archive file checksum mismatch for ${path}`);
+    }
+    files.push({
+      path,
+      size: file.size,
+      mtime: Number.isFinite(file.mtime) ? file.mtime : 0,
+      mimeType: typeof file.mimeType === "string" && file.mimeType ? file.mimeType : "application/octet-stream",
+      bytes: fileBytes,
+      blob: new Blob([fileBytes], {
+        type: typeof file.mimeType === "string" && file.mimeType ? file.mimeType : "application/octet-stream"
+      })
+    });
+  }
+  return {
+    fileName: typeof archive.name === "string" && archive.name ? archive.name : `${rootName}${ARCHIVE_EXTENSION}`,
+    rootName,
+    fileCount: files.length,
+    totalInputBytes: header.totalInputBytes,
+    files,
+    manifest
+  };
+}
+async function createArchiveZipBlob(extractedArchive) {
+  const zipBytes = zipSync(buildZipTree(extractedArchive), {
+    level: 9
+  });
+  return {
+    blob: new Blob([zipBytes], {
+      type: "application/zip"
+    }),
+    fileName: `${safeFileStem(extractedArchive.rootName)}.zip`
+  };
+}
+async function getUniqueChildDirectoryHandle(parentHandle, baseName) {
+  const initialName = sanitizeNameSegment(baseName);
+  let attempt = 0;
+  while (attempt < 100) {
+    const candidateName = attempt === 0 ? initialName : `${initialName}-${attempt + 1}`;
+    try {
+      await parentHandle.getDirectoryHandle(candidateName);
+      attempt += 1;
+    } catch (error) {
+      if ((error == null ? void 0 : error.name) !== "NotFoundError") {
+        throw error;
+      }
+      return parentHandle.getDirectoryHandle(candidateName, { create: true });
+    }
+  }
+  throw new Error("Could not allocate a unique output folder");
+}
+async function saveExtractedArchiveToDirectory(extractedArchive, directoryHandle, options = {}) {
+  if (!directoryHandle || directoryHandle.kind !== "directory") {
+    throw new Error("A directory handle is required");
+  }
+  const outputRootHandle = await getUniqueChildDirectoryHandle(
+    directoryHandle,
+    safeFileStem(options.outputDirectoryName || extractedArchive.rootName)
+  );
+  for (const file of extractedArchive.files) {
+    const segments = sanitizeRelativePath(file.path).split("/");
+    let parentHandle = outputRootHandle;
+    for (let index = 0; index < segments.length - 1; index += 1) {
+      parentHandle = await parentHandle.getDirectoryHandle(segments[index], { create: true });
+    }
+    const fileHandle = await parentHandle.getFileHandle(segments[segments.length - 1], { create: true });
+    const writable = await fileHandle.createWritable();
+    try {
+      await writable.write(await file.blob.arrayBuffer());
+    } finally {
+      await writable.close();
+    }
+  }
+  return {
+    directoryName: outputRootHandle.name,
+    fileCount: extractedArchive.fileCount
+  };
+}
+async function isArchiveBlob(blobLike) {
+  if (!blobLike || typeof blobLike.slice !== "function" || typeof blobLike.arrayBuffer !== "function") {
+    return false;
+  }
+  if (blobLike.type === ARCHIVE_MIME_TYPE) {
+    return true;
+  }
+  const headerSlice = blobLike.slice(0, 5);
+  const bytes = new Uint8Array(await headerSlice.arrayBuffer());
+  return readFixedAscii(bytes, 0, 5) === ARCHIVE_MAGIC;
+}
+function supportsDirectorySave() {
+  return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+}
 export {
+  ARCHIVE_EXTENSION,
+  ARCHIVE_MAGIC,
+  ARCHIVE_MIME_TYPE,
+  ARCHIVE_VERSION,
   AnimatedQrReceiver,
   AnimatedQrSender,
   DEFAULT_CHUNK_BYTE_SIZE,
@@ -5817,6 +7441,8 @@ export {
   DEFAULT_SYMBOLS_PER_FRAME,
   PROTOCOL_MAGIC,
   TRANSFER_PRESETS,
+  createArchive,
+  createArchiveZipBlob,
   createDownloadLink,
   createSessionId,
   createTransferFrames,
@@ -5826,7 +7452,11 @@ export {
   encodeParityFrame,
   encodeParityFrameBinary,
   estimateTransferStats,
+  extractArchive,
+  isArchiveBlob,
   parseFrame,
-  resolveTransferPreset
+  resolveTransferPreset,
+  saveExtractedArchiveToDirectory,
+  supportsDirectorySave
 };
 //# sourceMappingURL=animated-data-qr.esm.js.map
