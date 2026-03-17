@@ -43,9 +43,16 @@
           <div class="sender-grid">
             <div class="control-stack">
               <div>
-                <label class="control-label" for="fileInput">File</label>
+                <label class="control-label" for="fileInput">File or folder</label>
                 <div class="input-shell">
-                  <input id="fileInput" type="file" />
+                  <div class="picker-row">
+                    <button id="pickFileBtn" class="button button-secondary" type="button">Choose file</button>
+                    <button id="pickFolderBtn" class="button button-ghost" type="button">Choose folder</button>
+                  </div>
+                  <p id="selectionName" class="picker-selection">No file or folder selected</p>
+                  <p id="selectionMeta" class="muted">Folder transfers are packed into an internal archive and restored as extracted files on the receiver.</p>
+                  <input id="fileInput" class="sr-only" type="file" />
+                  <input id="folderInput" class="sr-only" type="file" webkitdirectory multiple />
                 </div>
               </div>
 
@@ -152,21 +159,23 @@
           <button id="helpCloseBtn" class="dialog-close" type="button" aria-label="Close help">&times;</button>
         </div>
         <ol class="help-list">
-          <li>Select the file you want to share.</li>
+          <li>Choose a single file or a whole folder.</li>
           <li>Choose the preset that matches your environment.</li>
           <li>Press <strong>Open QR stage</strong> to prepare the transfer automatically.</li>
           <li>Start the broadcast once the receiver is already scanning.</li>
+          <li>Folder selections are packed into an internal transfer archive before broadcasting.</li>
           <li>Keep the modal visible until the receiver finishes.</li>
         </ol>
       </div>
     </dialog>
 
     <script type="module">
-      import { AnimatedQrSender, resolveTransferPreset, estimateTransferStats } from "../dist/animated-data-qr.esm.js";
+      import { AnimatedQrSender, createArchive, resolveTransferPreset, estimateTransferStats } from "../dist/animated-data-qr.esm.js";
       import { initSenderDemo } from "../assets/demo-ui.js";
 
       initSenderDemo({
         AnimatedQrSender,
+        createArchive,
         resolveTransferPreset,
         estimateTransferStats
       });

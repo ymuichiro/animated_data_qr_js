@@ -174,16 +174,16 @@ export function initDemoShell() {
   }
 }
 
-function createEstimate({ file, presetName, preset, estimateTransferStats }) {
-  if (!file) {
+function createEstimate({ selection, presetName, preset, estimateTransferStats }) {
+  if (!selection || selection.kind !== "file") {
     return null;
   }
-  const totalChunks = Math.max(1, Math.ceil(file.size / preset.chunkByteSize));
+  const totalChunks = Math.max(1, Math.ceil(selection.file.size / preset.chunkByteSize));
   const extraFrames = preset.parityBlockDataChunks > 0
     ? Math.ceil(totalChunks / preset.parityBlockDataChunks)
     : 0;
   const estimate = estimateTransferStats({
-    fileSize: file.size,
+    fileSize: selection.file.size,
     chunkByteSize: preset.chunkByteSize,
     frameIntervalMs: preset.frameIntervalMs,
     symbolsPerFrame: preset.symbolsPerFrame,
@@ -209,29 +209,42 @@ function renderPresetCard(presetName, preset) {
   setText("presetMetricProtectionCaption", content.protectionCaption);
 }
 
-function renderSenderEstimate({ file, presetName, preset, estimateTransferStats }) {
-  const estimate = createEstimate({ file, presetName, preset, estimateTransferStats });
-  if (!estimate) {
+function renderSenderEstimate({ selection, presetName, preset, estimateTransferStats }) {
+  if (!selection) {
     setText("estimateHeadline", "Pick a file to see the expected loop time.");
     setText("estimateDetail", "Opening the QR stage prepares the transfer only when you need it.");
     return;
   }
 
+  if (selection.kind === "folder") {
+    setText("estimateHeadline", "Archive size and loop time will be calculated during prepare.");
+    setText(
+      "estimateDetail",
+      `${selection.rootName} folder  |  ${selection.fileCount} files  |  ${formatBytes(selection.totalBytes)} raw input`
+    );
+    return;
+  }
+
+  const estimate = createEstimate({ selection, presetName, preset, estimateTransferStats });
   setText("estimateHeadline", `Expected loop time: ${formatDuration(estimate.loopDurationMs)}`);
   setText(
     "estimateDetail",
-    `${file.name || "Unnamed file"}  |  ${formatBytes(file.size)}  |  ${PRESET_CONTENT[presetName]?.label || presetName} preset`
+    `${selection.file.name || "Unnamed file"}  |  ${formatBytes(selection.file.size)}  |  ${PRESET_CONTENT[presetName]?.label || presetName} preset`
   );
 }
 
 export function initSenderDemo({
   AnimatedQrSender,
+  createArchive,
   resolveTransferPreset,
   estimateTransferStats
 }) {
   initDemoShell();
 
   const fileInput = byId("fileInput");
+  const folderInput = byId("folderInput");
+  const pickFileBtn = byId("pickFileBtn");
+  const pickFolderBtn = byId("pickFolderBtn");
   const presetSelect = byId("presetSelect");
   const openStageBtn = byId("openStageBtn");
   const canvas = byId("qrCanvas");
@@ -249,11 +262,51 @@ export function initSenderDemo({
   });
 
   const state = {
-    file: null,
+    selection: null,
+    archivePreview: null,
     preparing: false,
     prepared: false,
     running: false
   };
+
+  function getFolderSelection(files) {
+    const list = Array.from(files ?? []);
+    if (list.length === 0) {
+      return null;
+    }
+    const relativePath = typeof list[0].webkitRelativePath === "string" ? list[0].webkitRelativePath : "";
+    const rootName = relativePath && relativePath.includes("/")
+      ? relativePath.split("/")[0]
+      : "transfer-folder";
+    const totalBytes = list.reduce((sum, file) => sum + (Number.isFinite(file.size) ? file.size : 0), 0);
+    return {
+      kind: "folder",
+      files: list,
+      rootName,
+      fileCount: list.length,
+      totalBytes
+    };
+  }
+
+  function renderSelection() {
+    if (!state.selection) {
+      setText("selectionName", "No file or folder selected");
+      setText("selectionMeta", "Folder transfers are packed into an internal archive and restored as extracted files on the receiver.");
+      return;
+    }
+
+    if (state.selection.kind === "folder") {
+      setText("selectionName", `${state.selection.rootName} folder selected`);
+      setText(
+        "selectionMeta",
+        `${state.selection.fileCount} files  |  ${formatBytes(state.selection.totalBytes)} raw input  |  The folder will be packed before QR transfer.`
+      );
+      return;
+    }
+
+    setText("selectionName", state.selection.file.name || "Selected file");
+    setText("selectionMeta", `${formatBytes(state.selection.file.size)} single file`);
+  }
 
   function openStageDialog() {
     openDialog(stageDialog);
@@ -281,25 +334,26 @@ export function initSenderDemo({
 
   function syncButtonState() {
     if (openStageBtn) {
-      openStageBtn.disabled = !state.file || state.preparing;
+      openStageBtn.disabled = !state.selection || state.preparing;
     }
     if (modalStartBtn) {
-      modalStartBtn.disabled = !state.file || state.preparing || state.running;
+      modalStartBtn.disabled = !state.selection || state.preparing || state.running;
     }
     if (modalStopBtn) {
       modalStopBtn.disabled = !state.running;
     }
   }
 
-  function markNeedsPrepare(reason = "Choose a file and open the QR stage.") {
+  function markNeedsPrepare(reason = "Choose a file or folder and open the QR stage.") {
     state.preparing = false;
     state.prepared = false;
-    setText("stageMeta", state.file
+    state.archivePreview = null;
+    setText("stageMeta", state.selection
       ? "Open the QR stage to prepare the transfer and preview the sender screen."
-      : "Choose a file, then open the QR stage when you are ready.");
+      : "Choose a file or folder, then open the QR stage when you are ready.");
     if (!state.running) {
-      const tone = state.file ? "warning" : "idle";
-      const title = state.file ? "Ready to open the stage" : "Select a file";
+      const tone = state.selection ? "warning" : "idle";
+      const title = state.selection ? "Ready to open the stage" : "Select a file or folder";
       setStatus({
         tone,
         title,
@@ -314,7 +368,7 @@ export function initSenderDemo({
     const { presetName, preset } = getCurrentPreset();
     renderPresetCard(presetName, preset);
     renderSenderEstimate({
-      file: state.file,
+      selection: state.selection,
       presetName,
       preset,
       estimateTransferStats
@@ -322,12 +376,12 @@ export function initSenderDemo({
   }
 
   async function prepareTransfer({ openStageAfter = false } = {}) {
-    if (!state.file) {
+    if (!state.selection) {
       setStatus({
         tone: "warning",
-        title: "Select a file",
-        detail: "A file is required before the QR stage can be prepared.",
-        legacy: "status: select a file"
+        title: "Select a file or folder",
+        detail: "A file or folder is required before the QR stage can be prepared.",
+        legacy: "status: select a file or folder"
       });
       return false;
     }
@@ -363,7 +417,31 @@ export function initSenderDemo({
     });
 
     try {
-      await sender.prepare(state.file, {
+      let transferInput = state.selection.kind === "file" ? state.selection.file : null;
+      if (state.selection.kind === "folder") {
+        setText("stageMeta", "Packing the selected folder into a secure transfer archive...");
+        setStatus({
+          tone: "working",
+          title: "Packing folder",
+          detail: "Reading files, grouping related content, and compressing the internal transfer archive.",
+          legacy: "status: packing folder"
+        });
+        const archive = await createArchive(state.selection.files, {
+          rootName: state.selection.rootName,
+          onProgress: (event) => {
+            const detail = event.currentFile
+              ? `${event.phase}: ${event.currentFile}`
+              : `${event.phase}: working through the selected folder`;
+            setText("stageMeta", `Preparing folder transfer  |  ${detail}`);
+          }
+        });
+        state.archivePreview = archive.manifestPreview;
+        transferInput = new File([archive.blob], archive.fileName, {
+          type: archive.blob.type
+        });
+      }
+
+      await sender.prepare(transferInput, {
         chunkByteSize: preset.chunkByteSize,
         payloadEncoding: preset.payloadEncoding,
         symbolsPerFrame: preset.symbolsPerFrame,
@@ -392,7 +470,14 @@ export function initSenderDemo({
     state.running = false;
     setText("stageMeta", `Prepared ${payload.displayFrames.length} display frames for ${payload.fileName}`);
     setText("estimateHeadline", `Expected loop time: ${formatDuration(payload.estimatedStats.loopDurationMs)}`);
-    setText("estimateDetail", `${payload.fileName}  |  ${formatBytes(payload.fileSize)}  |  ${payload.totalChunks} chunks`);
+    if (state.selection?.kind === "folder" && state.archivePreview) {
+      setText(
+        "estimateDetail",
+        `${state.archivePreview.rootName} folder  |  ${state.archivePreview.fileCount} files  |  ${formatBytes(payload.fileSize)} packed archive  |  ${payload.totalChunks} chunks`
+      );
+    } else {
+      setText("estimateDetail", `${payload.fileName}  |  ${formatBytes(payload.fileSize)}  |  ${payload.totalChunks} chunks`);
+    }
     setStatus({
       tone: "ready",
       title: "Transfer prepared",
@@ -424,10 +509,10 @@ export function initSenderDemo({
     state.running = false;
     setStatus({
       tone: state.prepared ? "ready" : "idle",
-      title: state.prepared ? "Broadcast stopped" : "Select a file",
+      title: state.prepared ? "Broadcast stopped" : "Select a file or folder",
       detail: state.prepared
         ? "You can start again immediately or prepare a different file."
-        : "Choose a file and open the QR stage.",
+        : "Choose a file or folder and open the QR stage.",
       legacy: "status: stopped"
     });
     syncButtonState();
@@ -449,12 +534,37 @@ export function initSenderDemo({
     if (state.running) {
       sender.stop();
     }
-    state.file = fileInput.files?.[0] || null;
+    if (folderInput) {
+      folderInput.value = "";
+    }
+    const file = fileInput.files?.[0] || null;
+    state.selection = file ? {
+      kind: "file",
+      file
+    } : null;
+    renderSelection();
     renderSelectedPreset();
     markNeedsPrepare(
-      state.file
+      state.selection
         ? "The selected file is ready. Open the QR stage to generate the QR loop."
         : "Choose a file to continue."
+    );
+  });
+
+  folderInput?.addEventListener("change", () => {
+    if (state.running) {
+      sender.stop();
+    }
+    if (fileInput) {
+      fileInput.value = "";
+    }
+    state.selection = getFolderSelection(folderInput.files);
+    renderSelection();
+    renderSelectedPreset();
+    markNeedsPrepare(
+      state.selection
+        ? "The selected folder is ready. Open the QR stage to build the transfer archive."
+        : "Choose a folder to continue."
     );
   });
 
@@ -464,9 +574,9 @@ export function initSenderDemo({
       sender.stop();
     }
     markNeedsPrepare(
-      state.file
+      state.selection
         ? "Preset updated. Open the QR stage again to apply the new transfer profile."
-        : "Choose a file to see the preset estimate."
+        : "Choose a file or folder to see the preset estimate."
     );
   });
 
@@ -495,12 +605,12 @@ export function initSenderDemo({
   }
 
   openStageBtn?.addEventListener("click", async () => {
-    if (!state.file) {
+    if (!state.selection) {
       setStatus({
         tone: "warning",
-        title: "Select a file",
-        detail: "Choose a file before opening the QR stage.",
-        legacy: "status: select a file"
+        title: "Select a file or folder",
+        detail: "Choose a file or folder before opening the QR stage.",
+        legacy: "status: select a file or folder"
       });
       return;
     }
@@ -536,12 +646,21 @@ export function initSenderDemo({
     }
   });
 
+  pickFileBtn?.addEventListener("click", () => {
+    fileInput?.click();
+  });
+
+  pickFolderBtn?.addEventListener("click", () => {
+    folderInput?.click();
+  });
+
+  renderSelection();
   renderSelectedPreset();
-  setText("stageMeta", "Choose a file, then open the QR stage when you are ready.");
+  setText("stageMeta", "Choose a file or folder, then open the QR stage when you are ready.");
   setStatus({
     tone: "idle",
-    title: "Select a file",
-    detail: "Choose a file and preset, then open the QR stage.",
+    title: "Select a file or folder",
+    detail: "Choose a file or folder and preset, then open the QR stage.",
     legacy: "status: idle"
   });
   syncButtonState();
@@ -549,7 +668,12 @@ export function initSenderDemo({
 
 export function initReceiverDemo({
   AnimatedQrReceiver,
-  createDownloadLink
+  createArchiveZipBlob,
+  createDownloadLink,
+  extractArchive,
+  isArchiveBlob,
+  saveExtractedArchiveToDirectory,
+  supportsDirectorySave
 }) {
   initDemoShell();
 
@@ -561,7 +685,10 @@ export function initReceiverDemo({
   const scanCloseBtn = byId("scanCloseBtn");
   const downloadCard = byId("downloadCard");
   const download = byId("download");
+  const saveFolderBtn = byId("saveFolderBtn");
+  const downloadZipBtn = byId("downloadZipBtn");
   let downloadUrl = null;
+  let extractedArchive = null;
 
   const receiver = new AnimatedQrReceiver({
     video,
@@ -619,12 +746,23 @@ export function initReceiverDemo({
   }
 
   function hideDownload() {
+    extractedArchive = null;
     if (downloadCard) {
       downloadCard.classList.add("hide");
     }
     if (download) {
       download.classList.add("hide");
       download.textContent = "Download restored file";
+      download.classList.remove("button-secondary");
+      download.classList.add("button-primary");
+    }
+    if (saveFolderBtn) {
+      saveFolderBtn.classList.add("hide");
+    }
+    if (downloadZipBtn) {
+      downloadZipBtn.classList.add("hide");
+      downloadZipBtn.classList.remove("button-primary");
+      downloadZipBtn.classList.add("button-secondary");
     }
     setText("downloadTitle", "Your file is ready");
     setText("downloadDetail", "The restored file will appear here as a clear primary action.");
@@ -634,7 +772,24 @@ export function initReceiverDemo({
     }
   }
 
-  function showDownload(result) {
+  function focusDownloadCard() {
+    requestAnimationFrame(() => {
+      downloadCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (saveFolderBtn && !saveFolderBtn.classList.contains("hide")) {
+        saveFolderBtn.focus?.();
+        return;
+      }
+      if (download && !download.classList.contains("hide")) {
+        download.focus?.();
+        return;
+      }
+      if (downloadZipBtn && !downloadZipBtn.classList.contains("hide")) {
+        downloadZipBtn.focus?.();
+      }
+    });
+  }
+
+  function showDownload(result, options = {}) {
     hideDownload();
     const { url, anchor } = createDownloadLink(result, download);
     downloadUrl = url;
@@ -642,9 +797,9 @@ export function initReceiverDemo({
     if (downloadCard) {
       downloadCard.classList.remove("hide");
     }
-    setText("downloadTitle", `Ready to save ${result.fileName}`);
-    setText("downloadDetail", "Use the blue download button below to save the reconstructed file locally.");
-    anchor.textContent = `Download ${result.fileName} (${formatBytes(result.size)})`;
+    setText("downloadTitle", options.title || `Ready to save ${result.fileName}`);
+    setText("downloadDetail", options.detail || "Use the blue download button below to save the reconstructed file locally.");
+    anchor.textContent = options.label || `Download ${result.fileName} (${formatBytes(result.size)})`;
     anchor.classList.remove("hide");
     anchor.classList.add("button-primary");
     anchor.addEventListener("click", () => {
@@ -655,11 +810,30 @@ export function initReceiverDemo({
         }
       }, 2000);
     }, { once: true });
+    focusDownloadCard();
+  }
 
-    requestAnimationFrame(() => {
-      downloadCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      anchor.focus?.();
-    });
+  function showArchiveActions(archiveResult) {
+    hideDownload();
+    extractedArchive = archiveResult;
+    if (downloadCard) {
+      downloadCard.classList.remove("hide");
+    }
+    setText("downloadTitle", `Ready to restore ${archiveResult.rootName}`);
+    setText("downloadDetail", supportsDirectorySave()
+      ? "Save the extracted folder directly, or download a ZIP fallback if you prefer."
+      : "This browser cannot save folders directly, so use the ZIP fallback below.");
+    if (saveFolderBtn && supportsDirectorySave()) {
+      saveFolderBtn.classList.remove("hide");
+    }
+    if (downloadZipBtn) {
+      downloadZipBtn.classList.remove("hide");
+      if (!supportsDirectorySave()) {
+        downloadZipBtn.classList.remove("button-secondary");
+        downloadZipBtn.classList.add("button-primary");
+      }
+    }
+    focusDownloadCard();
   }
 
   function resetProgressUi() {
@@ -712,6 +886,82 @@ export function initReceiverDemo({
       detail,
       legacy: "status: stopped"
     });
+  }
+
+  async function handleSaveFolder() {
+    if (!extractedArchive || !supportsDirectorySave()) {
+      return;
+    }
+
+    try {
+      setStatus({
+        tone: "working",
+        title: "Saving folder",
+        detail: "Choose a parent directory, then the browser will create a safe subfolder for the restored files.",
+        legacy: "status: saving folder"
+      });
+      const directoryHandle = await window.showDirectoryPicker();
+      const saved = await saveExtractedArchiveToDirectory(extractedArchive, directoryHandle);
+      setStatus({
+        tone: "complete",
+        title: "Folder saved",
+        detail: `Restored files were written into the new folder "${saved.directoryName}".`,
+        legacy: "status: folder saved"
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setStatus({
+          tone: "idle",
+          title: "Save cancelled",
+          detail: "No files were written. You can try again or use the ZIP fallback.",
+          legacy: "status: save cancelled"
+        });
+        return;
+      }
+      setStatus({
+        tone: "error",
+        title: "Could not save the folder",
+        detail: error?.message || String(error),
+        legacy: `error: ${error?.message || String(error)}`
+      });
+    }
+  }
+
+  async function handleZipDownload() {
+    if (!extractedArchive) {
+      return;
+    }
+
+    try {
+      setStatus({
+        tone: "working",
+        title: "Preparing ZIP fallback",
+        detail: "Building a standard ZIP so the restored folder can be downloaded with no extra software.",
+        legacy: "status: preparing zip"
+      });
+      const zipArtifact = await createArchiveZipBlob(extractedArchive);
+      const zipUrl = URL.createObjectURL(zipArtifact.blob);
+      const anchor = document.createElement("a");
+      anchor.href = zipUrl;
+      anchor.download = zipArtifact.fileName;
+      anchor.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(zipUrl);
+      }, 2000);
+      setStatus({
+        tone: "complete",
+        title: "ZIP fallback ready",
+        detail: `Started downloading ${zipArtifact.fileName}.`,
+        legacy: "status: zip fallback ready"
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        title: "Could not build the ZIP fallback",
+        detail: error?.message || String(error),
+        legacy: `error: ${error?.message || String(error)}`
+      });
+    }
   }
 
   receiver.on("camera-start", () => {
@@ -776,9 +1026,7 @@ export function initReceiverDemo({
     }
   });
 
-  receiver.on("complete", (result) => {
-    showDownload(result);
-
+  receiver.on("complete", async (result) => {
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
     if (progressBar) {
@@ -787,17 +1035,59 @@ export function initReceiverDemo({
     if (progressText) {
       progressText.textContent = `100%  |  ${result.receivedChunks}/${result.totalChunks} chunks received`;
     }
+    setText("stageMeta", "Transfer complete. Closing the scan stage and returning to the download action.");
+    closeScanDialogAfterComplete();
+    syncButtons(false);
+
+    if (await isArchiveBlob(result.blob)) {
+      setText("manifestName", result.fileName);
+      setText("manifestMeta", `${formatBytes(result.size)}  |  Preparing extracted folder`);
+      setStatus({
+        tone: "working",
+        title: "Preparing folder output",
+        detail: "Validating the transferred archive and extracting the folder in the browser.",
+        legacy: "status: extracting folder"
+      });
+
+      try {
+        const archiveResult = await extractArchive(result.blob);
+        setText("manifestName", `${archiveResult.rootName} folder`);
+        setText("manifestMeta", `${archiveResult.fileCount} files  |  ${formatBytes(archiveResult.totalInputBytes)} extracted contents`);
+        showArchiveActions(archiveResult);
+        setStatus({
+          tone: "complete",
+          title: "Folder transfer complete",
+          detail: supportsDirectorySave()
+            ? "Use the highlighted button to save the extracted folder, or download a ZIP fallback."
+            : "This browser cannot save folders directly, so use the highlighted ZIP fallback.",
+          legacy: "status: folder transfer complete"
+        });
+        return;
+      } catch (error) {
+        setStatus({
+          tone: "error",
+          title: "Folder extraction failed",
+          detail: `${error?.message || String(error)}. Download the raw transfer archive as a fallback.`,
+          legacy: `error: ${error?.message || String(error)}`
+        });
+        showDownload(result, {
+          title: "Folder extraction failed",
+          detail: "The internal transfer archive was received, but this browser could not extract it automatically.",
+          label: `Download ${result.fileName} (${formatBytes(result.size)})`
+        });
+        return;
+      }
+    }
+
     setText("manifestName", result.fileName);
     setText("manifestMeta", `${formatBytes(result.size)}  |  Ready to save`);
+    showDownload(result);
     setStatus({
       tone: "complete",
       title: "Transfer complete",
       detail: "The scan stage closed automatically. Use the highlighted download button on the page.",
       legacy: "status: complete"
     });
-    setText("stageMeta", "Transfer complete. Closing the scan stage and returning to the download action.");
-    closeScanDialogAfterComplete();
-    syncButtons(false);
   });
 
   receiver.on("error", ({ error }) => {
@@ -816,6 +1106,14 @@ export function initReceiverDemo({
 
   startBtn?.addEventListener("click", () => {
     void startScanFlow();
+  });
+
+  saveFolderBtn?.addEventListener("click", () => {
+    void handleSaveFolder();
+  });
+
+  downloadZipBtn?.addEventListener("click", () => {
+    void handleZipDownload();
   });
 
   stopBtn?.addEventListener("click", () => {

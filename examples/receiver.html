@@ -56,7 +56,11 @@
                 <span class="section-label">Download</span>
                 <h2 id="downloadTitle" class="estimate-title">Your file is ready</h2>
                 <p id="downloadDetail" class="status-detail">The restored file will appear here as a clear primary action.</p>
-                <a id="download" class="button-link button button-primary download-link hide">Download restored file</a>
+                <div class="download-actions">
+                  <button id="saveFolderBtn" class="button button-primary hide" type="button">Save extracted folder</button>
+                  <button id="downloadZipBtn" class="button button-secondary hide" type="button">Download extracted ZIP</button>
+                  <a id="download" class="button-link button button-primary download-link hide">Download restored file</a>
+                </div>
               </div>
             </div>
 
@@ -129,18 +133,32 @@
           <li>Open the scan stage when the sender is ready.</li>
           <li>Allow camera access as soon as the scan stage opens.</li>
           <li>Keep the full sender screen inside the frame.</li>
-          <li>Watch the live progress in the modal until the main page shows the download action.</li>
+          <li>Watch the live progress in the modal until the main page shows the save or download action.</li>
+          <li>Folder transfers can be saved directly as extracted files or downloaded as a standard ZIP fallback.</li>
         </ol>
       </div>
     </dialog>
 
     <script type="module">
-      import { AnimatedQrReceiver, createDownloadLink } from "../dist/animated-data-qr.esm.js";
+      import {
+        AnimatedQrReceiver,
+        createArchiveZipBlob,
+        createDownloadLink,
+        extractArchive,
+        isArchiveBlob,
+        saveExtractedArchiveToDirectory,
+        supportsDirectorySave
+      } from "../dist/animated-data-qr.esm.js";
       import { initReceiverDemo } from "../docs/assets/demo-ui.js";
 
       initReceiverDemo({
         AnimatedQrReceiver,
-        createDownloadLink
+        createArchiveZipBlob,
+        createDownloadLink,
+        extractArchive,
+        isArchiveBlob,
+        saveExtractedArchiveToDirectory,
+        supportsDirectorySave
       });
     </script>
   </body>

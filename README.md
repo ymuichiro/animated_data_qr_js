@@ -22,8 +22,10 @@ The current demo UI is designed to be:
 - preset-first, with low-level transfer tuning hidden by default
 - mobile-friendly and responsive
 - easy to operate during live demos
+- able to send either a single file or a whole folder
 - sender and receiver stages shown in focused modals
 - full-width mobile scan modal for the receiver camera
+- extracted-folder save or ZIP fallback on the receiver for folder transfers
 - suitable for GitHub Pages hosting
 
 GitHub Pages source files live in [`docs/`](./docs).
@@ -39,6 +41,8 @@ GitHub Pages source files live in [`docs/`](./docs).
 - default `binary` payload encoding
 - multi-symbol transfer with `symbolsPerFrame`
 - XOR parity recovery with `parityBlockDataChunks`
+- secure folder transfer via an internal `SARC1` archive container
+- folder restore as extracted files or standard ZIP fallback
 - ZXing/WASM receiver decoding with worker-first execution
 - automatic fallback to main-thread ZXing when a worker cannot start
 
@@ -65,6 +69,10 @@ The receiver auto-loads these adjacent files from the same directory:
 import {
   AnimatedQrSender,
   AnimatedQrReceiver,
+  createArchive,
+  extractArchive,
+  createArchiveZipBlob,
+  saveExtractedArchiveToDirectory,
   createDownloadLink
 } from "animated-data-qr-js";
 ```
@@ -122,6 +130,24 @@ Notable options:
 - `preferBarcodeDetector`: deprecated and ignored
 - `tileScanGridSizes`: deprecated and ignored
 
+### `createArchive(inputs, options?)`
+
+Builds an internal `SARC1` archive from a folder-like file list.
+Use this before `sender.prepare(...)` when the user selected a folder.
+
+### `extractArchive(archive, options?)`
+
+Validates and extracts a received `SARC1` archive inside the browser.
+
+### `createArchiveZipBlob(extractedArchive)`
+
+Builds a standard ZIP fallback from extracted folder contents.
+
+### `saveExtractedArchiveToDirectory(extractedArchive, directoryHandle, options?)`
+
+Writes extracted files into a fresh child directory under a user-selected parent directory.
+The helper never writes outside the chosen directory and avoids colliding with an existing folder name by allocating a unique subdirectory.
+
 ### `createDownloadLink(result, anchorElement?)`
 
 Creates a download link from a completed receive result.
@@ -142,9 +168,29 @@ The sender and receiver pages also include a help button that explains the opera
 Current demo flow:
 
 - the sender prepares the transfer automatically when you open the QR stage
+- the sender can choose a single file or a whole folder
+- folder selections are packed into an internal transfer archive before QR encoding
 - the receiver starts camera scanning as soon as you open the scan stage
 - live receive progress stays inside the receiver modal while the main page remains compact
-- when the transfer completes, the receiver modal closes automatically and the page highlights a clear download button
+- when a single file completes, the receiver modal closes automatically and the page highlights a clear download button
+- when a folder completes, the receiver extracts the internal archive in-browser and highlights either a direct folder-save action or a ZIP fallback
+
+## Folder Transfer
+
+Folder transfer is intentionally exposed as a browser-friendly workflow instead of asking the user to handle a custom archive manually.
+
+- sender side: the selected folder is packed into an internal `SARC1` archive
+- transfer phase: QR frames carry only the packed archive bytes
+- receiver side: the browser validates and extracts the archive automatically
+- user output: extracted-folder save on supported browsers, or standard ZIP download everywhere else
+
+Security-oriented checks in the archive pipeline include:
+
+- relative-path sanitization with traversal rejection
+- per-file, per-block, and total-size limits
+- block and file SHA-256 verification during extraction
+- unique output subdirectory allocation when writing restored folders
+- standard ZIP fallback generation only after extraction succeeds
 
 ## Transfer Tuning
 

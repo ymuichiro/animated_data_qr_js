@@ -95,6 +95,125 @@ test("animated QR transfer completes in browser runtime", async ({ page }) => {
   expect(result.totalChunks).toBeGreaterThan(1);
 });
 
+test("folder archive transfer completes and extracts in browser runtime", async ({ page }) => {
+  await page.goto("/examples/index.html");
+
+  const result = await page.evaluate(async () => {
+    const {
+      AnimatedQrSender,
+      AnimatedQrReceiver,
+      createArchive,
+      extractArchive
+    } = await import("/dist/animated-data-qr.esm.js");
+
+    const senderCanvas = document.createElement("canvas");
+    senderCanvas.style.width = "440px";
+    document.body.appendChild(senderCanvas);
+
+    const receiverVideo = document.createElement("video");
+    receiverVideo.autoplay = true;
+    receiverVideo.muted = true;
+    receiverVideo.playsInline = true;
+    receiverVideo.style.width = "440px";
+    document.body.appendChild(receiverVideo);
+
+    function createFolderFile(path, contents, type = "text/plain") {
+      const file = new File([contents], path.split("/").pop(), { type });
+      Object.defineProperty(file, "webkitRelativePath", {
+        configurable: true,
+        value: path
+      });
+      return file;
+    }
+
+    const archive = await createArchive([
+      createFolderFile("sample-folder/docs/readme.md", "# Folder transfer\n"),
+      createFolderFile("sample-folder/src/index.js", "export const hello = 'world';\n", "text/javascript")
+    ]);
+
+    const sender = new AnimatedQrSender({
+      canvas: senderCanvas,
+      frameIntervalMs: 80,
+      chunkByteSize: 72,
+      qrOptions: {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        scale: 10
+      }
+    });
+
+    await sender.prepare(new File([archive.blob], archive.fileName, {
+      type: archive.blob.type
+    }));
+    await sender.start();
+
+    const stream = senderCanvas.captureStream(30);
+    receiverVideo.srcObject = stream;
+    await receiverVideo.play();
+
+    const receiver = new AnimatedQrReceiver({
+      video: receiverVideo,
+      scanIntervalMs: 45,
+      scanMaxDimension: 480,
+      maxSymbolsPerFrame: 1,
+      autoStopOnComplete: true
+    });
+
+    receiver.stream = stream;
+
+    const completed = await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error("Timed out while waiting for folder transfer completion"));
+      }, 25_000);
+
+      receiver.on("complete", (resultPayload) => {
+        clearTimeout(timeoutId);
+        resolve(resultPayload);
+      });
+
+      receiver.on("error", ({ error }) => {
+        clearTimeout(timeoutId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
+
+      receiver.start().catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+    });
+
+    const extracted = await extractArchive(completed.blob);
+    const fileTexts = {};
+    for (const file of extracted.files) {
+      fileTexts[file.path] = await file.blob.text();
+    }
+
+    sender.stop();
+    receiver.stop();
+    for (const track of stream.getTracks()) {
+      track.stop();
+    }
+
+    return {
+      fileName: completed.fileName,
+      mimeType: completed.mimeType,
+      rootName: extracted.rootName,
+      paths: extracted.files.map((file) => file.path).sort(),
+      fileTexts
+    };
+  });
+
+  expect(result.fileName).toBe("sample-folder.sarc1");
+  expect(result.mimeType).toBe("application/vnd.animated-data-qr.sarc1");
+  expect(result.rootName).toBe("sample-folder");
+  expect(result.paths).toEqual([
+    "docs/readme.md",
+    "src/index.js"
+  ]);
+  expect(result.fileTexts["docs/readme.md"]).toBe("# Folder transfer\n");
+  expect(result.fileTexts["src/index.js"]).toBe("export const hello = 'world';\n");
+});
+
 test("multi-QR transfer completes in browser runtime", async ({ page }) => {
   await page.goto("/examples/index.html");
 

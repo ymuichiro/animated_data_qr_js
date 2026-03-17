@@ -98,6 +98,70 @@ export interface ReceiverOptions {
   scanCanvas?: HTMLCanvasElement | null;
 }
 
+export type ArchiveProfile = "max" | "extreme" | "ultra";
+
+export interface ArchiveProgressEventPayload {
+  phase: "scan" | "compress" | "finalize" | "extract";
+  processedBytes: number;
+  totalBytes: number;
+  currentFile?: string;
+  currentBlockId?: number;
+}
+
+export interface ArchiveOptions {
+  profile?: ArchiveProfile;
+  rootName?: string;
+  compressionLevel?: number;
+  maxBlockBytes?: number;
+  rawFallbackThresholdBytes?: number;
+  maxFileCount?: number;
+  maxInputBytes?: number;
+  maxFileBytes?: number;
+  onProgress?: (event: ArchiveProgressEventPayload) => void;
+}
+
+export interface ArchiveManifestPreview {
+  format: string;
+  version: number;
+  rootName: string;
+  fileCount: number;
+  totalInputBytes: number;
+  archiveSize: number;
+  blockCount: number;
+}
+
+export interface ArchiveArtifact {
+  blob: Blob;
+  fileName: string;
+  manifestPreview: ArchiveManifestPreview;
+}
+
+export interface ExtractedArchiveFile {
+  path: string;
+  size: number;
+  mtime: number;
+  mimeType: string;
+  bytes: Uint8Array;
+  blob: Blob;
+}
+
+export interface ExtractedArchive {
+  fileName: string;
+  rootName: string;
+  fileCount: number;
+  totalInputBytes: number;
+  files: ExtractedArchiveFile[];
+  manifest: {
+    format: string;
+    version: number;
+    createdAt: string;
+    rootName: string;
+    settings: Record<string, unknown>;
+    blocks: Array<Record<string, unknown>>;
+    files: Array<Record<string, unknown>>;
+  };
+}
+
 export interface ReceivedTransfer {
   sessionId: string;
   blob: Blob;
@@ -120,6 +184,10 @@ export interface TransferPreset {
 }
 
 export const PROTOCOL_MAGIC: string;
+export const ARCHIVE_MAGIC: string;
+export const ARCHIVE_VERSION: number;
+export const ARCHIVE_MIME_TYPE: string;
+export const ARCHIVE_EXTENSION: string;
 export const DEFAULT_FRAME_INTERVAL_MS: number;
 export const DEFAULT_CHUNK_BYTE_SIZE: number;
 export const DEFAULT_PAYLOAD_ENCODING: PayloadEncoding;
@@ -235,6 +303,37 @@ export class AnimatedQrReceiver {
   on(eventName: string, listener: (payload: any) => void): () => void;
   off(eventName: string, listener: (payload: any) => void): void;
 }
+
+export function createArchive(
+  inputs: ArrayLike<(Blob & { name?: string; type?: string; lastModified?: number; webkitRelativePath?: string })>,
+  options?: ArchiveOptions
+): Promise<ArchiveArtifact>;
+
+export function extractArchive(
+  archive: Blob & { name?: string; type?: string },
+  options?: ArchiveOptions
+): Promise<ExtractedArchive>;
+
+export function createArchiveZipBlob(
+  extractedArchive: ExtractedArchive
+): Promise<{
+  blob: Blob;
+  fileName: string;
+}>;
+
+export function saveExtractedArchiveToDirectory(
+  extractedArchive: ExtractedArchive,
+  directoryHandle: FileSystemDirectoryHandle,
+  options?: {
+    outputDirectoryName?: string;
+  }
+): Promise<{
+  directoryName: string;
+  fileCount: number;
+}>;
+
+export function isArchiveBlob(blobLike: Blob): Promise<boolean>;
+export function supportsDirectorySave(): boolean;
 
 export function createDownloadLink(
   result: ReceivedTransfer,

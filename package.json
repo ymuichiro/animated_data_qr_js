@@ -48,6 +48,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "fflate": "^0.8.2",
     "qrcode": "^1.5.4",
     "zxing-wasm": "^3.0.1"
   },
