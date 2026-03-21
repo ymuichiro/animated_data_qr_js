@@ -2601,6 +2601,259 @@ function groupIntoBatches(items, batchSize) {
   return batches;
 }
 
+// src/stage-layout.js
+var DEFAULT_STAGE_STYLE = "guided";
+var CANONICAL_STAGE_SIZE = 1e3;
+var OUTER_FRAME_INSET = 32;
+var OUTER_FRAME_STROKE = 18;
+var MARKER_SIZE = 112;
+var MARKER_INNER_SIZE = 40;
+var MARKER_CENTER_OFFSET = 138;
+var PAYLOAD_INSET = 196;
+var PAYLOAD_GAP = 28;
+function scaleValue(value, size) {
+  return Math.round(value / CANONICAL_STAGE_SIZE * size);
+}
+function createCellRects(symbolCount, payloadRect) {
+  if (symbolCount === 1) {
+    return [{ ...payloadRect }];
+  }
+  if (symbolCount === 2) {
+    const cellWidth2 = Math.floor((payloadRect.width - PAYLOAD_GAP) / 2);
+    return [
+      {
+        x: payloadRect.x,
+        y: payloadRect.y,
+        width: cellWidth2,
+        height: payloadRect.height
+      },
+      {
+        x: payloadRect.x + payloadRect.width - cellWidth2,
+        y: payloadRect.y,
+        width: cellWidth2,
+        height: payloadRect.height
+      }
+    ];
+  }
+  if (symbolCount === 4) {
+    const cellWidth2 = Math.floor((payloadRect.width - PAYLOAD_GAP) / 2);
+    const cellHeight2 = Math.floor((payloadRect.height - PAYLOAD_GAP) / 2);
+    return [
+      { x: payloadRect.x, y: payloadRect.y, width: cellWidth2, height: cellHeight2 },
+      {
+        x: payloadRect.x + payloadRect.width - cellWidth2,
+        y: payloadRect.y,
+        width: cellWidth2,
+        height: cellHeight2
+      },
+      {
+        x: payloadRect.x,
+        y: payloadRect.y + payloadRect.height - cellHeight2,
+        width: cellWidth2,
+        height: cellHeight2
+      },
+      {
+        x: payloadRect.x + payloadRect.width - cellWidth2,
+        y: payloadRect.y + payloadRect.height - cellHeight2,
+        width: cellWidth2,
+        height: cellHeight2
+      }
+    ];
+  }
+  const { columns, rows } = getGridDimensions(symbolCount);
+  const gap = PAYLOAD_GAP;
+  const cellWidth = Math.floor((payloadRect.width - gap * (columns - 1)) / columns);
+  const cellHeight = Math.floor((payloadRect.height - gap * (rows - 1)) / rows);
+  const rects = [];
+  for (let index = 0; index < symbolCount; index += 1) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    rects.push({
+      x: payloadRect.x + column * (cellWidth + gap),
+      y: payloadRect.y + row * (cellHeight + gap),
+      width: cellWidth,
+      height: cellHeight
+    });
+  }
+  return rects;
+}
+function normalizeStageSymbolCount(symbolCount) {
+  if (symbolCount === 1 || symbolCount === 2 || symbolCount === 4) {
+    return symbolCount;
+  }
+  if (!Number.isInteger(symbolCount) || symbolCount <= 1) {
+    return 1;
+  }
+  return symbolCount;
+}
+function getStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
+  const normalizedSymbolCount = normalizeStageSymbolCount(symbolCount);
+  const outerFrame = {
+    x: scaleValue(OUTER_FRAME_INSET, size),
+    y: scaleValue(OUTER_FRAME_INSET, size),
+    width: size - scaleValue(OUTER_FRAME_INSET, size) * 2,
+    height: size - scaleValue(OUTER_FRAME_INSET, size) * 2,
+    stroke: Math.max(8, scaleValue(OUTER_FRAME_STROKE, size))
+  };
+  const payloadRect = {
+    x: scaleValue(PAYLOAD_INSET, size),
+    y: scaleValue(PAYLOAD_INSET, size),
+    width: size - scaleValue(PAYLOAD_INSET, size) * 2,
+    height: size - scaleValue(PAYLOAD_INSET, size) * 2
+  };
+  const markerSize = Math.max(24, scaleValue(MARKER_SIZE, size));
+  const markerInnerSize = Math.max(10, scaleValue(MARKER_INNER_SIZE, size));
+  const markerOffset = scaleValue(MARKER_CENTER_OFFSET, size);
+  const markerCenters = [
+    { x: markerOffset, y: markerOffset },
+    { x: size - markerOffset, y: markerOffset },
+    { x: size - markerOffset, y: size - markerOffset },
+    { x: markerOffset, y: size - markerOffset }
+  ];
+  const markerRects = markerCenters.map((center) => ({
+    center,
+    x: Math.round(center.x - markerSize / 2),
+    y: Math.round(center.y - markerSize / 2),
+    width: markerSize,
+    height: markerSize,
+    innerX: Math.round(center.x - markerInnerSize / 2),
+    innerY: Math.round(center.y - markerInnerSize / 2),
+    innerSize: markerInnerSize
+  }));
+  return {
+    size,
+    symbolCount: normalizedSymbolCount,
+    outerFrame,
+    payloadRect,
+    markerCenters,
+    markerRects,
+    cells: createCellRects(normalizedSymbolCount, payloadRect)
+  };
+}
+function getStageMarkerTargetPoints(size = CANONICAL_STAGE_SIZE) {
+  return getStageLayout(1, size).markerCenters;
+}
+function addPass(passes, seen, region) {
+  const key = [region.x, region.y, region.width, region.height, Number(Boolean(region.tryHarder)), Number(Boolean(region.tryInvert))].join(":");
+  if (!seen.has(key)) {
+    seen.add(key);
+    passes.push(region);
+  }
+}
+function expandRegion(region, maxSize, paddingRatio = 0.1) {
+  const padX = Math.round(region.width * paddingRatio);
+  const padY = Math.round(region.height * paddingRatio);
+  const x = Math.max(0, region.x - padX);
+  const y = Math.max(0, region.y - padY);
+  const right = Math.min(maxSize, region.x + region.width + padX);
+  const bottom = Math.min(maxSize, region.y + region.height + padY);
+  return {
+    x,
+    y,
+    width: Math.max(1, right - x),
+    height: Math.max(1, bottom - y)
+  };
+}
+function buildGuidedDecodePasses(size, symbolCount = null) {
+  const seen = /* @__PURE__ */ new Set();
+  const passes = [];
+  addPass(passes, seen, {
+    x: 0,
+    y: 0,
+    width: size,
+    height: size,
+    tryHarder: false,
+    tryInvert: true,
+    tryDenoise: true,
+    binarizer: "LocalAverage"
+  });
+  const symbolCounts = symbolCount ? [normalizeStageSymbolCount(symbolCount)] : [1, 2, 4];
+  for (const count of symbolCounts) {
+    const layout = getStageLayout(count, size);
+    for (const cell of layout.cells) {
+      const expanded = expandRegion(cell, size, 0.14);
+      addPass(passes, seen, {
+        ...expanded,
+        tryHarder: true,
+        tryInvert: true,
+        tryDenoise: true,
+        binarizer: "LocalAverage"
+      });
+    }
+    const payloadExpanded = expandRegion(layout.payloadRect, size, 0.05);
+    const halfWidth = Math.floor((payloadExpanded.width - 16) / 2);
+    const halfHeight = Math.floor((payloadExpanded.height - 16) / 2);
+    addPass(passes, seen, {
+      x: payloadExpanded.x,
+      y: payloadExpanded.y,
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x + payloadExpanded.width - Math.max(1, halfWidth),
+      y: payloadExpanded.y,
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x,
+      y: payloadExpanded.y + payloadExpanded.height - Math.max(1, halfHeight),
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x + payloadExpanded.width - Math.max(1, halfWidth),
+      y: payloadExpanded.y + payloadExpanded.height - Math.max(1, halfHeight),
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+  }
+  return passes;
+}
+function drawGuidedStageFrame(context, size, symbolCount) {
+  const layout = getStageLayout(symbolCount, size);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, size, size);
+  context.strokeStyle = "#111827";
+  context.lineWidth = layout.outerFrame.stroke;
+  context.strokeRect(
+    layout.outerFrame.x,
+    layout.outerFrame.y,
+    layout.outerFrame.width,
+    layout.outerFrame.height
+  );
+  context.fillStyle = "#eff4fb";
+  context.fillRect(
+    layout.payloadRect.x,
+    layout.payloadRect.y,
+    layout.payloadRect.width,
+    layout.payloadRect.height
+  );
+  for (const marker of layout.markerRects) {
+    context.fillStyle = "#111827";
+    context.fillRect(marker.x, marker.y, marker.width, marker.height);
+    context.fillStyle = "#ffffff";
+    context.fillRect(marker.innerX, marker.innerY, marker.innerSize, marker.innerSize);
+  }
+  return layout;
+}
+
 // src/emitter.js
 var SimpleEmitter = class {
   constructor() {
@@ -2748,14 +3001,13 @@ function toQrSymbol(frame) {
 }
 function getCanvasDisplaySize(canvas, symbolCount) {
   const width = Math.max(320, canvas.clientWidth || canvas.width || 640);
-  const { columns, rows } = getGridDimensions(symbolCount);
-  const size = Math.max(320, Math.round(width * (rows / columns)));
+  const size = Math.max(320, width);
   return {
     width,
     height: size
   };
 }
-async function renderQrGrid(canvas, qrSymbols, qrOptions) {
+async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
   const { columns, rows } = getGridDimensions(qrSymbols.length);
   const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
   const frameCanvas = document.createElement("canvas");
@@ -2785,6 +3037,34 @@ async function renderQrGrid(canvas, qrSymbols, qrOptions) {
   canvas.height = height;
   targetContext.clearRect(0, 0, width, height);
   targetContext.drawImage(frameCanvas, 0, 0, width, height);
+}
+async function renderGuidedQrGrid(canvas, qrSymbols, qrOptions) {
+  const { width } = getCanvasDisplaySize(canvas, qrSymbols.length);
+  const frameCanvas = document.createElement("canvas");
+  frameCanvas.width = width;
+  frameCanvas.height = width;
+  const context = frameCanvas.getContext("2d");
+  const layout = drawGuidedStageFrame(context, width, qrSymbols.length);
+  for (let index = 0; index < qrSymbols.length; index += 1) {
+    const cell = layout.cells[index];
+    if (!cell) {
+      break;
+    }
+    const tempCanvas = document.createElement("canvas");
+    const drawSize = Math.max(96, Math.min(cell.width, cell.height) - Math.round(Math.min(cell.width, cell.height) * 0.08));
+    await import_qrcode.default.toCanvas(tempCanvas, qrSymbols[index], {
+      ...qrOptions,
+      width: drawSize
+    });
+    const x = cell.x + Math.max(0, Math.floor((cell.width - drawSize) / 2));
+    const y = cell.y + Math.max(0, Math.floor((cell.height - drawSize) / 2));
+    context.drawImage(tempCanvas, x, y, drawSize, drawSize);
+  }
+  const targetContext = canvas.getContext("2d");
+  canvas.width = width;
+  canvas.height = width;
+  targetContext.clearRect(0, 0, width, width);
+  targetContext.drawImage(frameCanvas, 0, 0, width, width);
 }
 async function blobLikeToBytes(fileLike) {
   if (!fileLike || typeof fileLike.arrayBuffer !== "function") {
@@ -3005,7 +3285,7 @@ async function createTransferFrames(fileLike, options = {}) {
 var _AnimatedQrSender_instances, tick_fn;
 var AnimatedQrSender = class extends SimpleEmitter {
   constructor(options = {}) {
-    var _a2, _b2, _c, _d, _e2, _f, _g;
+    var _a2, _b2, _c, _d, _e2, _f, _g, _h;
     super();
     __privateAdd(this, _AnimatedQrSender_instances);
     this.canvas = (_a2 = options.canvas) != null ? _a2 : null;
@@ -3020,6 +3300,7 @@ var AnimatedQrSender = class extends SimpleEmitter {
       scale: 6,
       ...(_g = options.qrOptions) != null ? _g : {}
     };
+    this.stageStyle = (_h = options.stageStyle) != null ? _h : DEFAULT_STAGE_STYLE;
     this.prepared = null;
     this.frameIndex = 0;
     this.loopIndex = 0;
@@ -3063,16 +3344,20 @@ var AnimatedQrSender = class extends SimpleEmitter {
       getLoopDisplayFrame(this.prepared, safeIndex, this.loopIndex),
       safeIndex + this.loopIndex
     );
-    if (displayFrame.qrSymbols.length === 1) {
-      const { width, height } = getCanvasDisplaySize(this.canvas, 1);
-      this.canvas.width = width;
-      this.canvas.height = height;
-      await import_qrcode.default.toCanvas(this.canvas, displayFrame.qrSymbols[0], {
-        ...this.qrOptions,
-        width: Math.min(width, height)
-      });
+    if (this.stageStyle === "plain") {
+      if (displayFrame.qrSymbols.length === 1) {
+        const { width, height } = getCanvasDisplaySize(this.canvas, 1);
+        this.canvas.width = width;
+        this.canvas.height = height;
+        await import_qrcode.default.toCanvas(this.canvas, displayFrame.qrSymbols[0], {
+          ...this.qrOptions,
+          width: Math.min(width, height)
+        });
+      } else {
+        await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+      }
     } else {
-      await renderQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+      await renderGuidedQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
     }
     this.emit("frame", {
       frameIndex: safeIndex,
@@ -5072,6 +5357,9 @@ function createImageDataLike(data, width, height) {
     height
   };
 }
+function createImageDataFromBuffer(buffer, width, height) {
+  return createImageDataLike(new Uint8ClampedArray(buffer), width, height);
+}
 function cropImageData(imageData, region) {
   const { data, width: sourceWidth, height: sourceHeight } = imageData;
   const x = Math.max(0, Math.min(sourceWidth, Math.round(region.x)));
@@ -5106,16 +5394,27 @@ function getModuleOverrides(wasmUrl) {
   overrideCache.set(wasmUrl, overrides);
   return overrides;
 }
-function createReaderOptions(maxNumberOfSymbols, tryHarder) {
-  return {
+function createReaderOptions(maxNumberOfSymbols, pass = {}) {
+  const options = {
     formats: ["QRCode"],
     maxNumberOfSymbols: Math.max(1, maxNumberOfSymbols),
-    tryHarder,
+    tryHarder: Boolean(pass.tryHarder),
     tryRotate: true,
-    tryInvert: false,
-    tryDownscale: false,
+    tryInvert: Boolean(pass.tryInvert),
+    tryDenoise: Boolean(pass.tryDenoise),
+    tryDownscale: Boolean(pass.tryDownscale),
     textMode: "Plain"
   };
+  if (Number.isFinite(pass.downscaleFactor)) {
+    options.downscaleFactor = pass.downscaleFactor;
+  }
+  if (Number.isFinite(pass.downscaleThreshold)) {
+    options.downscaleThreshold = pass.downscaleThreshold;
+  }
+  if (typeof pass.binarizer === "string" && pass.binarizer.length > 0) {
+    options.binarizer = pass.binarizer;
+  }
+  return options;
 }
 function toFrameInput(result) {
   if ((result == null ? void 0 : result.bytes) instanceof Uint8Array && result.bytes.length > 0) {
@@ -5226,7 +5525,7 @@ async function decodeImageDataWithZxing(imageData, {
     const croppedImage = cropImageData(imageData, pass);
     const results = await Fe2(
       croppedImage,
-      createReaderOptions(remainingSymbols, Boolean(pass.tryHarder))
+      createReaderOptions(remainingSymbols, pass)
     );
     for (const result of results) {
       const frameInput = toFrameInput(result);
@@ -5417,7 +5716,517 @@ postToWorker_fn = function(payload, transfer = []) {
   });
 };
 
+// src/camera-optimization.js
+function normalizeCapabilityList(value) {
+  return Array.isArray(value) ? value : [];
+}
+function getNumericCapabilityRange(capability) {
+  if (!capability || typeof capability !== "object") {
+    return null;
+  }
+  const min = Number.isFinite(capability.min) ? capability.min : null;
+  const max2 = Number.isFinite(capability.max) ? capability.max : null;
+  if (min === null && max2 === null) {
+    return null;
+  }
+  return { min, max: max2 };
+}
+function clampNumber(value, range) {
+  var _a2, _b2;
+  if (!range) {
+    return value;
+  }
+  const min = (_a2 = range.min) != null ? _a2 : value;
+  const max2 = (_b2 = range.max) != null ? _b2 : value;
+  return Math.max(min, Math.min(max2, value));
+}
+function chooseResolution(range, preferredValue) {
+  if (!range) {
+    return void 0;
+  }
+  const ideal = clampNumber(preferredValue, range);
+  return { ideal };
+}
+async function optimizeCameraTrack(track, options = {}) {
+  var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k;
+  if (!track || typeof track.applyConstraints !== "function") {
+    return {
+      optimized: false,
+      reason: "Track constraints are not supported",
+      settings: typeof (track == null ? void 0 : track.getSettings) === "function" ? track.getSettings() : {}
+    };
+  }
+  const capabilities = typeof track.getCapabilities === "function" ? (_a2 = track.getCapabilities()) != null ? _a2 : {} : {};
+  const settings = typeof track.getSettings === "function" ? (_b2 = track.getSettings()) != null ? _b2 : {} : {};
+  const constraint = {};
+  const advanced = [];
+  const widthRange = getNumericCapabilityRange(capabilities.width);
+  const heightRange = getNumericCapabilityRange(capabilities.height);
+  const frameRateRange = getNumericCapabilityRange(capabilities.frameRate);
+  const width = chooseResolution(widthRange, (_c = options.preferredWidth) != null ? _c : 1280);
+  const height = chooseResolution(heightRange, (_d = options.preferredHeight) != null ? _d : 720);
+  if (width) {
+    constraint.width = width;
+  }
+  if (height) {
+    constraint.height = height;
+  }
+  if (frameRateRange) {
+    constraint.frameRate = {
+      ideal: clampNumber((_e2 = options.preferredFrameRate) != null ? _e2 : 30, frameRateRange),
+      max: clampNumber((_f = options.maxFrameRate) != null ? _f : 30, frameRateRange)
+    };
+  }
+  const resizeModes = normalizeCapabilityList(capabilities.resizeMode);
+  if (resizeModes.includes("none")) {
+    advanced.push({ resizeMode: "none" });
+  }
+  const focusModes = normalizeCapabilityList(capabilities.focusMode);
+  if (focusModes.includes("continuous")) {
+    advanced.push({ focusMode: "continuous" });
+  } else if (focusModes.includes("single-shot")) {
+    advanced.push({ focusMode: "single-shot" });
+  }
+  const zoomRange = getNumericCapabilityRange(capabilities.zoom);
+  if (zoomRange) {
+    advanced.push({
+      zoom: clampNumber((_h = options.preferredZoom) != null ? _h : (_g = zoomRange.min) != null ? _g : 1, {
+        min: (_i = zoomRange.min) != null ? _i : 1,
+        max: Math.max((_j = zoomRange.min) != null ? _j : 1, Math.min((_k = zoomRange.max) != null ? _k : 1, 1.6))
+      })
+    });
+  }
+  if (advanced.length > 0) {
+    constraint.advanced = advanced;
+  }
+  try {
+    await track.applyConstraints(constraint);
+    return {
+      optimized: true,
+      capabilities,
+      settings: typeof track.getSettings === "function" ? track.getSettings() : settings,
+      appliedConstraints: constraint
+    };
+  } catch (error) {
+    return {
+      optimized: false,
+      capabilities,
+      settings: typeof track.getSettings === "function" ? track.getSettings() : settings,
+      appliedConstraints: constraint,
+      error: error instanceof Error ? error : new Error(String(error))
+    };
+  }
+}
+
+// src/calibration.js
+var DETECTION_MAX_DIMENSION = 320;
+var LOCK_DISTANCE_RATIO = 0.04;
+function clamp(value, min, max2) {
+  return Math.max(min, Math.min(max2, value));
+}
+function toGray(red, green, blue) {
+  return Math.round(red * 0.299 + green * 0.587 + blue * 0.114);
+}
+function constrainSize(width, height, maxDimension) {
+  const longestEdge = Math.max(width, height);
+  if (longestEdge <= maxDimension) {
+    return { width, height, scale: 1 };
+  }
+  const scale = maxDimension / longestEdge;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+    scale
+  };
+}
+function resizeImageDataNearest(imageData, maxDimension = DETECTION_MAX_DIMENSION) {
+  const { width, height } = constrainSize(imageData.width, imageData.height, maxDimension);
+  if (width === imageData.width && height === imageData.height) {
+    return {
+      imageData,
+      scaleX: 1,
+      scaleY: 1
+    };
+  }
+  const output = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = Math.min(imageData.height - 1, Math.round(y / height * imageData.height));
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = Math.min(imageData.width - 1, Math.round(x / width * imageData.width));
+      const sourceIndex = (sourceY * imageData.width + sourceX) * 4;
+      const targetIndex = (y * width + x) * 4;
+      output[targetIndex] = imageData.data[sourceIndex];
+      output[targetIndex + 1] = imageData.data[sourceIndex + 1];
+      output[targetIndex + 2] = imageData.data[sourceIndex + 2];
+      output[targetIndex + 3] = imageData.data[sourceIndex + 3];
+    }
+  }
+  return {
+    imageData: createImageDataFromBuffer(output.buffer, width, height),
+    scaleX: imageData.width / width,
+    scaleY: imageData.height / height
+  };
+}
+function buildGrayHistogram(imageData) {
+  const histogram = new Uint32Array(256);
+  const grays = new Uint8Array(imageData.width * imageData.height);
+  for (let index = 0, pixel = 0; index < imageData.data.length; index += 4, pixel += 1) {
+    const gray = toGray(
+      imageData.data[index],
+      imageData.data[index + 1],
+      imageData.data[index + 2]
+    );
+    histogram[gray] += 1;
+    grays[pixel] = gray;
+  }
+  return { histogram, grays };
+}
+function computeOtsuThreshold(histogram, totalPixels) {
+  let sum = 0;
+  for (let tone = 0; tone < 256; tone += 1) {
+    sum += tone * histogram[tone];
+  }
+  let sumBackground = 0;
+  let weightBackground = 0;
+  let bestVariance = -1;
+  let threshold = 96;
+  for (let tone = 0; tone < 256; tone += 1) {
+    weightBackground += histogram[tone];
+    if (weightBackground === 0) {
+      continue;
+    }
+    const weightForeground = totalPixels - weightBackground;
+    if (weightForeground === 0) {
+      break;
+    }
+    sumBackground += tone * histogram[tone];
+    const meanBackground = sumBackground / weightBackground;
+    const meanForeground = (sum - sumBackground) / weightForeground;
+    const betweenClassVariance = weightBackground * weightForeground * (meanBackground - meanForeground) ** 2;
+    if (betweenClassVariance > bestVariance) {
+      bestVariance = betweenClassVariance;
+      threshold = tone;
+    }
+  }
+  return clamp(threshold, 24, 180);
+}
+function findConnectedComponents(grays, width, height, threshold) {
+  const visited = new Uint8Array(width * height);
+  const components = [];
+  const queueX = new Int32Array(width * height);
+  const queueY = new Int32Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const startIndex = y * width + x;
+      if (visited[startIndex] || grays[startIndex] > threshold) {
+        continue;
+      }
+      let head = 0;
+      let tail = 0;
+      visited[startIndex] = 1;
+      queueX[tail] = x;
+      queueY[tail] = y;
+      tail += 1;
+      let area = 0;
+      let minX = x;
+      let maxX = x;
+      let minY = y;
+      let maxY = y;
+      let sumX = 0;
+      let sumY = 0;
+      while (head < tail) {
+        const currentX = queueX[head];
+        const currentY = queueY[head];
+        head += 1;
+        area += 1;
+        sumX += currentX;
+        sumY += currentY;
+        minX = Math.min(minX, currentX);
+        maxX = Math.max(maxX, currentX);
+        minY = Math.min(minY, currentY);
+        maxY = Math.max(maxY, currentY);
+        for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+          for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+            if (offsetX === 0 && offsetY === 0) {
+              continue;
+            }
+            const nextX = currentX + offsetX;
+            const nextY = currentY + offsetY;
+            if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) {
+              continue;
+            }
+            const nextIndex = nextY * width + nextX;
+            if (visited[nextIndex] || grays[nextIndex] > threshold) {
+              continue;
+            }
+            visited[nextIndex] = 1;
+            queueX[tail] = nextX;
+            queueY[tail] = nextY;
+            tail += 1;
+          }
+        }
+      }
+      const componentWidth = maxX - minX + 1;
+      const componentHeight = maxY - minY + 1;
+      const bboxArea = componentWidth * componentHeight;
+      components.push({
+        area,
+        minX,
+        maxX,
+        minY,
+        maxY,
+        width: componentWidth,
+        height: componentHeight,
+        fillRatio: area / Math.max(1, bboxArea),
+        centroid: {
+          x: sumX / area,
+          y: sumY / area
+        }
+      });
+    }
+  }
+  return components;
+}
+function filterMarkerCandidates(components, totalPixels) {
+  return components.filter((component) => {
+    const aspectRatio = component.width / Math.max(1, component.height);
+    return component.area >= totalPixels * 7e-4 && component.area <= totalPixels * 0.12 && aspectRatio >= 0.55 && aspectRatio <= 1.85 && component.fillRatio >= 0.42 && component.width >= 10 && component.height >= 10;
+  }).sort((left, right) => right.area - left.area).slice(0, 14);
+}
+function orderPoints(points) {
+  const unique = Array.from(new Set(points));
+  if (unique.length < 4) {
+    return null;
+  }
+  const pointList = [...points];
+  const topLeft = pointList.reduce((best, point) => point.x + point.y < best.x + best.y ? point : best);
+  const bottomRight = pointList.reduce((best, point) => point.x + point.y > best.x + best.y ? point : best);
+  const topRight = pointList.reduce((best, point) => point.x - point.y > best.x - best.y ? point : best);
+  const bottomLeft = pointList.reduce((best, point) => point.y - point.x > best.y - best.x ? point : best);
+  const ordered = [topLeft, topRight, bottomRight, bottomLeft];
+  if (new Set(ordered).size < 4) {
+    return null;
+  }
+  return ordered;
+}
+function distance(a, b2) {
+  return Math.hypot(a.x - b2.x, a.y - b2.y);
+}
+function polygonArea(points) {
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    sum += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(sum) / 2;
+}
+function* combinations(items, size, start = 0, prefix = []) {
+  if (prefix.length === size) {
+    yield prefix;
+    return;
+  }
+  for (let index = start; index <= items.length - (size - prefix.length); index += 1) {
+    yield* combinations(items, size, index + 1, [...prefix, items[index]]);
+  }
+}
+function selectBestStage(candidates, totalPixels) {
+  let best = null;
+  for (const set of combinations(candidates, 4)) {
+    const ordered = orderPoints(set.map((candidate) => candidate.centroid));
+    if (!ordered) {
+      continue;
+    }
+    const topWidth = distance(ordered[0], ordered[1]);
+    const bottomWidth = distance(ordered[3], ordered[2]);
+    const leftHeight = distance(ordered[0], ordered[3]);
+    const rightHeight = distance(ordered[1], ordered[2]);
+    const minSide = Math.min(topWidth, bottomWidth, leftHeight, rightHeight);
+    const maxSide = Math.max(topWidth, bottomWidth, leftHeight, rightHeight);
+    if (minSide < 24 || maxSide / Math.max(1, minSide) > 2.6) {
+      continue;
+    }
+    const area = polygonArea(ordered);
+    if (area < totalPixels * 0.07) {
+      continue;
+    }
+    const avgArea = set.reduce((sum, candidate) => sum + candidate.area, 0) / set.length;
+    const sizeVariance = set.reduce((sum, candidate) => sum + Math.abs(candidate.area - avgArea), 0) / Math.max(1, avgArea);
+    const symmetryPenalty = Math.abs(topWidth - bottomWidth) / Math.max(topWidth, bottomWidth) + Math.abs(leftHeight - rightHeight) / Math.max(leftHeight, rightHeight);
+    const score = area / totalPixels * 10 - sizeVariance - symmetryPenalty;
+    if (!best || score > best.score) {
+      best = {
+        score,
+        points: ordered,
+        candidates: set
+      };
+    }
+  }
+  return best;
+}
+function detectGuidedStage(imageData) {
+  const resized = resizeImageDataNearest(imageData);
+  const { histogram, grays } = buildGrayHistogram(resized.imageData);
+  const threshold = computeOtsuThreshold(histogram, grays.length);
+  const components = findConnectedComponents(grays, resized.imageData.width, resized.imageData.height, threshold);
+  const candidates = filterMarkerCandidates(components, grays.length);
+  const selection = selectBestStage(candidates, grays.length);
+  if (!selection) {
+    return null;
+  }
+  return {
+    threshold,
+    points: selection.points.map((point) => ({
+      x: point.x * resized.scaleX,
+      y: point.y * resized.scaleY
+    })),
+    score: selection.score
+  };
+}
+function solveLinearSystem(matrix, vector) {
+  const size = vector.length;
+  const augmented = matrix.map((row, index) => [...row, vector[index]]);
+  for (let pivot = 0; pivot < size; pivot += 1) {
+    let maxRow = pivot;
+    for (let row = pivot + 1; row < size; row += 1) {
+      if (Math.abs(augmented[row][pivot]) > Math.abs(augmented[maxRow][pivot])) {
+        maxRow = row;
+      }
+    }
+    if (Math.abs(augmented[maxRow][pivot]) < 1e-8) {
+      throw new Error("Could not solve the homography matrix");
+    }
+    if (maxRow !== pivot) {
+      const tmp = augmented[pivot];
+      augmented[pivot] = augmented[maxRow];
+      augmented[maxRow] = tmp;
+    }
+    const pivotValue = augmented[pivot][pivot];
+    for (let column = pivot; column <= size; column += 1) {
+      augmented[pivot][column] /= pivotValue;
+    }
+    for (let row = 0; row < size; row += 1) {
+      if (row === pivot) {
+        continue;
+      }
+      const factor = augmented[row][pivot];
+      for (let column = pivot; column <= size; column += 1) {
+        augmented[row][column] -= factor * augmented[pivot][column];
+      }
+    }
+  }
+  return augmented.map((row) => row[size]);
+}
+function computeHomography(sourcePoints, targetPoints) {
+  if (!Array.isArray(sourcePoints) || !Array.isArray(targetPoints) || sourcePoints.length !== 4 || targetPoints.length !== 4) {
+    throw new TypeError("computeHomography requires 4 source points and 4 target points");
+  }
+  const matrix = [];
+  const vector = [];
+  for (let index = 0; index < 4; index += 1) {
+    const source = sourcePoints[index];
+    const target = targetPoints[index];
+    matrix.push([source.x, source.y, 1, 0, 0, 0, -target.x * source.x, -target.x * source.y]);
+    vector.push(target.x);
+    matrix.push([0, 0, 0, source.x, source.y, 1, -target.y * source.x, -target.y * source.y]);
+    vector.push(target.y);
+  }
+  const [h11, h12, h13, h21, h22, h23, h31, h32] = solveLinearSystem(matrix, vector);
+  return [
+    h11,
+    h12,
+    h13,
+    h21,
+    h22,
+    h23,
+    h31,
+    h32,
+    1
+  ];
+}
+function applyHomography(matrix, x, y) {
+  const denominator = matrix[6] * x + matrix[7] * y + matrix[8];
+  if (Math.abs(denominator) < 1e-8) {
+    return { x: 0, y: 0 };
+  }
+  return {
+    x: (matrix[0] * x + matrix[1] * y + matrix[2]) / denominator,
+    y: (matrix[3] * x + matrix[4] * y + matrix[5]) / denominator
+  };
+}
+function sampleBilinear(imageData, x, y) {
+  const sourceX = clamp(x, 0, imageData.width - 1);
+  const sourceY = clamp(y, 0, imageData.height - 1);
+  const x0 = Math.floor(sourceX);
+  const y0 = Math.floor(sourceY);
+  const x1 = Math.min(imageData.width - 1, x0 + 1);
+  const y1 = Math.min(imageData.height - 1, y0 + 1);
+  const dx = sourceX - x0;
+  const dy = sourceY - y0;
+  function pixel(offsetX, offsetY) {
+    const index = (offsetY * imageData.width + offsetX) * 4;
+    return [
+      imageData.data[index],
+      imageData.data[index + 1],
+      imageData.data[index + 2],
+      imageData.data[index + 3]
+    ];
+  }
+  const topLeft = pixel(x0, y0);
+  const topRight = pixel(x1, y0);
+  const bottomLeft = pixel(x0, y1);
+  const bottomRight = pixel(x1, y1);
+  const output = [0, 0, 0, 0];
+  for (let channel = 0; channel < 4; channel += 1) {
+    const top = topLeft[channel] + (topRight[channel] - topLeft[channel]) * dx;
+    const bottom = bottomLeft[channel] + (bottomRight[channel] - bottomLeft[channel]) * dx;
+    output[channel] = Math.round(top + (bottom - top) * dy);
+  }
+  return output;
+}
+function warpGuidedStage(imageData, sourcePoints, outputSize = 720) {
+  const targetPoints = getStageMarkerTargetPoints(outputSize);
+  const targetToSource = computeHomography(targetPoints, sourcePoints);
+  const output = new Uint8ClampedArray(outputSize * outputSize * 4);
+  for (let y = 0; y < outputSize; y += 1) {
+    for (let x = 0; x < outputSize; x += 1) {
+      const source = applyHomography(targetToSource, x, y);
+      const [red, green, blue, alpha] = sampleBilinear(imageData, source.x, source.y);
+      const index = (y * outputSize + x) * 4;
+      output[index] = red;
+      output[index + 1] = green;
+      output[index + 2] = blue;
+      output[index + 3] = alpha;
+    }
+  }
+  return createImageDataFromBuffer(output.buffer, outputSize, outputSize);
+}
+function isDetectionStable(previousPoints, nextPoints, referenceSize) {
+  if (!previousPoints || !nextPoints || previousPoints.length !== 4 || nextPoints.length !== 4) {
+    return false;
+  }
+  const totalDistance = previousPoints.reduce((sum, point, index) => sum + distance(point, nextPoints[index]), 0);
+  const averageDistance = totalDistance / previousPoints.length;
+  return averageDistance <= referenceSize * LOCK_DISTANCE_RATIO;
+}
+function getDetectionReferenceSize(points) {
+  return Math.max(
+    distance(points[0], points[1]),
+    distance(points[1], points[2]),
+    distance(points[2], points[3]),
+    distance(points[3], points[0])
+  );
+}
+function getCanonicalStageSize(scanMaxDimension) {
+  if (!Number.isInteger(scanMaxDimension) || scanMaxDimension <= 0) {
+    return 720;
+  }
+  return clamp(scanMaxDimension, 480, CANONICAL_STAGE_SIZE);
+}
+
 // src/receiver.js
+var CALIBRATION_LOCK_FRAMES = 3;
+var CALIBRATION_GRACE_FRAMES = 10;
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
     return { width, height };
@@ -5445,6 +6254,7 @@ function createSession(sessionId, totalChunks) {
     chunks: new Array(totalChunks).fill(null),
     parityChunks: /* @__PURE__ */ new Map(),
     receivedChunks: 0,
+    manifestReceived: false,
     completed: false
   };
 }
@@ -5522,10 +6332,10 @@ function createDownloadLink(result, anchorElement = null) {
   anchor.download = result.fileName;
   return { url, anchor };
 }
-var _AnimatedQrReceiver_instances, scanTick_fn, getExpectedSymbolsPerFrame_fn, dedupeFrameInputs_fn, emitDecoderMode_fn, readFrameInputs_fn;
+var _AnimatedQrReceiver_instances, resetCalibration_fn, emitCalibrationState_fn, cancelScheduledScan_fn, scheduleNextScan_fn, processScanFrame_fn, getExpectedSymbolsPerFrame_fn, getKnownSymbolsPerFrame_fn, dedupeFrameInputs_fn, emitDecoderMode_fn, updateCalibration_fn, decodeLegacy_fn, decodeGuided_fn, readFrameInputs_fn;
 var AnimatedQrReceiver = class extends SimpleEmitter {
   constructor(options = {}) {
-    var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k;
+    var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k, _l, _m;
     super();
     __privateAdd(this, _AnimatedQrReceiver_instances);
     this.video = (_a2 = options.video) != null ? _a2 : null;
@@ -5536,7 +6346,9 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     this.scanMaxDimension = (_f = options.scanMaxDimension) != null ? _f : 960;
     this.tileScanGridSizes = Array.isArray(options.tileScanGridSizes) ? Array.from(new Set(options.tileScanGridSizes)) : [2, 3];
     this.decoderAssetBaseUrl = (_g = options.decoderAssetBaseUrl) != null ? _g : null;
-    this.cameraConstraints = (_h = options.cameraConstraints) != null ? _h : {
+    this.guidedCalibration = (_h = options.guidedCalibration) != null ? _h : true;
+    this.cameraOptimization = (_i = options.cameraOptimization) != null ? _i : true;
+    this.cameraConstraints = (_j = options.cameraConstraints) != null ? _j : {
       audio: false,
       video: {
         facingMode: "environment"
@@ -5546,8 +6358,17 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     this.stream = null;
     this.scanning = false;
     this.scanTimer = null;
-    this.scanCanvas = (_i = options.scanCanvas) != null ? _i : typeof document !== "undefined" ? document.createElement("canvas") : null;
-    this.scanContext = (_k = (_j = this.scanCanvas) == null ? void 0 : _j.getContext("2d", { willReadFrequently: true })) != null ? _k : null;
+    this.scanInFlight = false;
+    this.videoFrameRequestId = null;
+    this.canonicalStageSize = getCanonicalStageSize(this.scanMaxDimension);
+    this.calibrationState = "searching";
+    this.calibrationDetail = "";
+    this.calibrationCandidatePoints = null;
+    this.calibrationStableFrames = 0;
+    this.calibrationLockedPoints = null;
+    this.calibrationLostFrames = 0;
+    this.scanCanvas = (_k = options.scanCanvas) != null ? _k : typeof document !== "undefined" ? document.createElement("canvas") : null;
+    this.scanContext = (_m = (_l = this.scanCanvas) == null ? void 0 : _l.getContext("2d", { willReadFrequently: true })) != null ? _m : null;
     this.decoder = new ZxingDecoderController({
       decoderAssetBaseUrl: this.decoderAssetBaseUrl
     });
@@ -5566,6 +6387,16 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     this.video.srcObject = this.stream;
     this.video.setAttribute("playsinline", "true");
     await this.video.play();
+    if (this.cameraOptimization) {
+      const [videoTrack] = this.stream.getVideoTracks();
+      const optimization = await optimizeCameraTrack(videoTrack, {
+        preferredWidth: 1280,
+        preferredHeight: 720,
+        preferredFrameRate: 30,
+        maxFrameRate: 30
+      });
+      this.emit("camera-tuned", optimization);
+    }
     this.emit("camera-start", { stream: this.stream });
     return this.stream;
   }
@@ -5588,25 +6419,25 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     if (this.scanning) {
       return;
     }
+    __privateMethod(this, _AnimatedQrReceiver_instances, resetCalibration_fn).call(this);
     const cameraPromise = this.stream ? Promise.resolve(this.stream) : this.startCamera(constraints != null ? constraints : this.cameraConstraints);
     const decoderPromise = this.decoder.prepare();
     const [, decoderState] = await Promise.all([cameraPromise, decoderPromise]);
     __privateMethod(this, _AnimatedQrReceiver_instances, emitDecoderMode_fn).call(this, decoderState, true);
     this.scanning = true;
     this.emit("scan-start", {});
-    await __privateMethod(this, _AnimatedQrReceiver_instances, scanTick_fn).call(this);
+    __privateMethod(this, _AnimatedQrReceiver_instances, scheduleNextScan_fn).call(this);
   }
   stop() {
     this.scanning = false;
-    if (this.scanTimer !== null) {
-      clearTimeout(this.scanTimer);
-      this.scanTimer = null;
-    }
+    this.scanInFlight = false;
+    __privateMethod(this, _AnimatedQrReceiver_instances, cancelScheduledScan_fn).call(this);
     this.emit("scan-stop", {});
   }
   reset(sessionId = null) {
     if (sessionId === null) {
       this.sessions.clear();
+      __privateMethod(this, _AnimatedQrReceiver_instances, resetCalibration_fn).call(this);
       return;
     }
     this.sessions.delete(sessionId);
@@ -5641,6 +6472,7 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
       session.fileSize = frame.fileSize;
       session.mimeType = frame.mimeType;
       session.fileName = frame.fileName;
+      session.manifestReceived = true;
       this.emit("manifest", {
         sessionId: session.sessionId,
         fileName: session.fileName,
@@ -5700,7 +6532,7 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     }
     const progress = createProgressPayload(session);
     this.emit("progress", progress);
-    if (!session.completed && session.receivedChunks === session.totalChunks) {
+    if (!session.completed && session.manifestReceived && session.receivedChunks === session.totalChunks) {
       const allChunks = session.chunks.every((value) => value instanceof Uint8Array);
       if (!allChunks) {
         return { accepted: true, frame, result: null };
@@ -5733,10 +6565,63 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
   }
 };
 _AnimatedQrReceiver_instances = new WeakSet();
-scanTick_fn = async function() {
+resetCalibration_fn = function() {
+  this.calibrationState = "";
+  this.calibrationDetail = "";
+  this.calibrationCandidatePoints = null;
+  this.calibrationStableFrames = 0;
+  this.calibrationLockedPoints = null;
+  this.calibrationLostFrames = 0;
+  __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Align the sender stage", { force: true });
+};
+emitCalibrationState_fn = function(state, detail, extra = {}) {
+  if (this.calibrationState === state && this.calibrationDetail === detail && !extra.force) {
+    return;
+  }
+  this.calibrationState = state;
+  this.calibrationDetail = detail != null ? detail : "";
+  this.emit("calibration-state", {
+    state,
+    detail,
+    ...extra
+  });
+};
+cancelScheduledScan_fn = function() {
+  if (this.scanTimer !== null) {
+    clearTimeout(this.scanTimer);
+    this.scanTimer = null;
+  }
+  if (this.videoFrameRequestId !== null && this.video && typeof this.video.cancelVideoFrameCallback === "function") {
+    this.video.cancelVideoFrameCallback(this.videoFrameRequestId);
+    this.videoFrameRequestId = null;
+  }
+};
+scheduleNextScan_fn = function() {
+  if (!this.scanning || !this.video) {
+    return;
+  }
+  __privateMethod(this, _AnimatedQrReceiver_instances, cancelScheduledScan_fn).call(this);
+  if (typeof this.video.requestVideoFrameCallback === "function") {
+    this.videoFrameRequestId = this.video.requestVideoFrameCallback(() => {
+      this.videoFrameRequestId = null;
+      void __privateMethod(this, _AnimatedQrReceiver_instances, processScanFrame_fn).call(this);
+    });
+    return;
+  }
+  this.scanTimer = setTimeout(() => {
+    this.scanTimer = null;
+    void __privateMethod(this, _AnimatedQrReceiver_instances, processScanFrame_fn).call(this);
+  }, this.scanIntervalMs);
+};
+processScanFrame_fn = async function() {
   if (!this.scanning) {
     return;
   }
+  if (this.scanInFlight) {
+    __privateMethod(this, _AnimatedQrReceiver_instances, scheduleNextScan_fn).call(this);
+    return;
+  }
+  this.scanInFlight = true;
   try {
     const frameInputs = await __privateMethod(this, _AnimatedQrReceiver_instances, readFrameInputs_fn).call(this);
     for (const frameInput of frameInputs) {
@@ -5744,11 +6629,11 @@ scanTick_fn = async function() {
     }
   } catch (error) {
     this.emit("error", { error });
-  }
-  if (this.scanning) {
-    this.scanTimer = setTimeout(() => {
-      void __privateMethod(this, _AnimatedQrReceiver_instances, scanTick_fn).call(this);
-    }, this.scanIntervalMs);
+  } finally {
+    this.scanInFlight = false;
+    if (this.scanning) {
+      __privateMethod(this, _AnimatedQrReceiver_instances, scheduleNextScan_fn).call(this);
+    }
   }
 };
 getExpectedSymbolsPerFrame_fn = function() {
@@ -5760,6 +6645,15 @@ getExpectedSymbolsPerFrame_fn = function() {
     expectedSymbolsPerFrame = Math.max(1, this.maxSymbolsPerFrame);
   }
   return expectedSymbolsPerFrame;
+};
+getKnownSymbolsPerFrame_fn = function() {
+  let known = null;
+  for (const session of this.sessions.values()) {
+    if (session.symbolsPerFrame && session.symbolsPerFrame > 0) {
+      known = Math.max(known != null ? known : 0, session.symbolsPerFrame);
+    }
+  }
+  return known;
 };
 dedupeFrameInputs_fn = function(inputs) {
   const unique = /* @__PURE__ */ new Map();
@@ -5782,6 +6676,73 @@ emitDecoderMode_fn = function(state, force = false) {
     reason: (_a2 = state.reason) != null ? _a2 : null
   });
 };
+updateCalibration_fn = function(imageData) {
+  if (!this.guidedCalibration) {
+    return null;
+  }
+  const detection = detectGuidedStage(imageData);
+  if (detection == null ? void 0 : detection.points) {
+    if (this.calibrationCandidatePoints && isDetectionStable(
+      this.calibrationCandidatePoints,
+      detection.points,
+      getDetectionReferenceSize(detection.points)
+    )) {
+      this.calibrationStableFrames += 1;
+    } else {
+      this.calibrationStableFrames = 1;
+    }
+    this.calibrationCandidatePoints = detection.points;
+    this.calibrationLostFrames = 0;
+    if (this.calibrationStableFrames >= CALIBRATION_LOCK_FRAMES) {
+      this.calibrationLockedPoints = detection.points;
+      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "locked", "Calibration locked", {
+        score: detection.score
+      });
+    } else {
+      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "locking", "Locking on the sender stage", {
+        score: detection.score
+      });
+    }
+  } else if (this.calibrationLockedPoints) {
+    this.calibrationLostFrames += 1;
+    if (this.calibrationLostFrames === 1) {
+      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "lost", "Stage lost, realigning");
+    }
+    if (this.calibrationLostFrames > CALIBRATION_GRACE_FRAMES) {
+      this.calibrationLockedPoints = null;
+      this.calibrationCandidatePoints = null;
+      this.calibrationStableFrames = 0;
+      this.calibrationLostFrames = 0;
+      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Align the sender stage");
+    }
+  } else {
+    this.calibrationStableFrames = 0;
+    this.calibrationCandidatePoints = null;
+    __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Align the sender stage");
+  }
+  if (!this.calibrationLockedPoints) {
+    return null;
+  }
+  return warpGuidedStage(imageData, this.calibrationLockedPoints, this.canonicalStageSize);
+};
+decodeLegacy_fn = async function(imageData, expectedSymbolsPerFrame) {
+  const decoderState = await this.decoder.decodeImageData(
+    imageData,
+    buildDecodePasses(imageData.width, imageData.height),
+    expectedSymbolsPerFrame
+  );
+  __privateMethod(this, _AnimatedQrReceiver_instances, emitDecoderMode_fn).call(this, decoderState);
+  return decoderState;
+};
+decodeGuided_fn = async function(rectifiedImage, expectedSymbolsPerFrame) {
+  const decoderState = await this.decoder.decodeImageData(
+    rectifiedImage,
+    buildGuidedDecodePasses(rectifiedImage.width, __privateMethod(this, _AnimatedQrReceiver_instances, getKnownSymbolsPerFrame_fn).call(this)),
+    expectedSymbolsPerFrame
+  );
+  __privateMethod(this, _AnimatedQrReceiver_instances, emitDecoderMode_fn).call(this, decoderState);
+  return decoderState;
+};
 readFrameInputs_fn = async function() {
   if (!this.video || this.video.readyState < 2 || !this.scanCanvas || !this.scanContext) {
     return [];
@@ -5800,12 +6761,15 @@ readFrameInputs_fn = async function() {
   }
   this.scanContext.drawImage(this.video, 0, 0, width, height);
   const imageData = this.scanContext.getImageData(0, 0, width, height);
-  const decoderState = await this.decoder.decodeImageData(
-    imageData,
-    buildDecodePasses(width, height),
-    __privateMethod(this, _AnimatedQrReceiver_instances, getExpectedSymbolsPerFrame_fn).call(this)
-  );
-  __privateMethod(this, _AnimatedQrReceiver_instances, emitDecoderMode_fn).call(this, decoderState);
+  const expectedSymbolsPerFrame = __privateMethod(this, _AnimatedQrReceiver_instances, getExpectedSymbolsPerFrame_fn).call(this);
+  const rectifiedImage = __privateMethod(this, _AnimatedQrReceiver_instances, updateCalibration_fn).call(this, imageData);
+  if (rectifiedImage) {
+    const guidedDecoderState = await __privateMethod(this, _AnimatedQrReceiver_instances, decodeGuided_fn).call(this, rectifiedImage, expectedSymbolsPerFrame);
+    if (guidedDecoderState.frameInputs.length > 0 || this.calibrationState === "locked") {
+      return __privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, guidedDecoderState.frameInputs);
+    }
+  }
+  const decoderState = await __privateMethod(this, _AnimatedQrReceiver_instances, decodeLegacy_fn).call(this, imageData, expectedSymbolsPerFrame);
   return __privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, decoderState.frameInputs);
 };
 

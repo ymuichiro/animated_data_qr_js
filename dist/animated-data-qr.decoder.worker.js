@@ -2171,16 +2171,27 @@
     overrideCache.set(wasmUrl, overrides);
     return overrides;
   }
-  function createReaderOptions(maxNumberOfSymbols, tryHarder) {
-    return {
+  function createReaderOptions(maxNumberOfSymbols, pass = {}) {
+    const options = {
       formats: ["QRCode"],
       maxNumberOfSymbols: Math.max(1, maxNumberOfSymbols),
-      tryHarder,
+      tryHarder: Boolean(pass.tryHarder),
       tryRotate: true,
-      tryInvert: false,
-      tryDownscale: false,
+      tryInvert: Boolean(pass.tryInvert),
+      tryDenoise: Boolean(pass.tryDenoise),
+      tryDownscale: Boolean(pass.tryDownscale),
       textMode: "Plain"
     };
+    if (Number.isFinite(pass.downscaleFactor)) {
+      options.downscaleFactor = pass.downscaleFactor;
+    }
+    if (Number.isFinite(pass.downscaleThreshold)) {
+      options.downscaleThreshold = pass.downscaleThreshold;
+    }
+    if (typeof pass.binarizer === "string" && pass.binarizer.length > 0) {
+      options.binarizer = pass.binarizer;
+    }
+    return options;
   }
   function toFrameInput(result) {
     if ((result == null ? void 0 : result.bytes) instanceof Uint8Array && result.bytes.length > 0) {
@@ -2291,7 +2302,7 @@
       const croppedImage = cropImageData(imageData, pass);
       const results = await Fe2(
         croppedImage,
-        createReaderOptions(remainingSymbols, Boolean(pass.tryHarder))
+        createReaderOptions(remainingSymbols, pass)
       );
       for (const result of results) {
         const frameInput = toFrameInput(result);

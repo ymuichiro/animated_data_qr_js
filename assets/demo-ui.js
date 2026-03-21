@@ -696,6 +696,8 @@ export function initReceiverDemo({
     maxSymbolsPerFrame: 4,
     autoStopOnComplete: true,
     scanMaxDimension: 720,
+    guidedCalibration: true,
+    cameraOptimization: true,
     cameraConstraints: {
       audio: false,
       video: {
@@ -715,6 +717,10 @@ export function initReceiverDemo({
       }
     }
   });
+
+  function setCalibrationUi(text) {
+    setText("calibrationStatusBadge", text);
+  }
 
   function openScanDialog() {
     openDialog(scanDialog);
@@ -842,6 +848,8 @@ export function initReceiverDemo({
     setText("manifestName", "Waiting for sender manifest");
     setText("manifestMeta", "The file details will appear here once the first manifest is read.");
     setText("decoderModeText", "Decoder: preparing");
+    setText("cameraStatusText", "Camera: preparing");
+    setCalibrationUi("Align the sender stage");
 
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
@@ -858,10 +866,12 @@ export function initReceiverDemo({
     resetProgressUi();
     setText("stageMeta", "Requesting camera access and preparing the scan stage...");
     setText("decoderModeText", "Decoder: preparing");
+    setText("cameraStatusText", "Camera: requesting access");
+    setCalibrationUi("Align the sender stage");
     setStatus({
       tone: "working",
       title: "Starting camera",
-      detail: "Allow camera access, then keep the full sender stage inside the frame.",
+      detail: "Allow camera access, then align the sender stage inside the on-screen guide.",
       legacy: "status: starting camera"
     });
 
@@ -966,15 +976,27 @@ export function initReceiverDemo({
 
   receiver.on("camera-start", () => {
     openScanDialog();
-    setText("stageMeta", "Camera is live. Aim at the sender screen and keep the full QR area visible.");
+    setText("stageMeta", "Camera is live. Align the full sender stage so the calibration guide can lock.");
     syncButtons(true);
+  });
+
+  receiver.on("camera-tuned", (payload) => {
+    if (payload?.optimized) {
+      const settings = payload.settings || {};
+      const width = settings.width || "?";
+      const height = settings.height || "?";
+      const frameRate = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "auto fps";
+      setText("cameraStatusText", `Camera: tuned (${width}x${height}, ${frameRate})`);
+      return;
+    }
+    setText("cameraStatusText", "Camera: using the browser defaults");
   });
 
   receiver.on("scan-start", () => {
     setStatus({
       tone: "live",
       title: "Scanning in progress",
-      detail: "Keep both devices steady while the receiver collects frames.",
+      detail: "Hold both devices steady while the calibration guide locks and the receiver collects frames.",
       legacy: "status: scanning"
     });
     syncButtons(true);
@@ -988,10 +1010,27 @@ export function initReceiverDemo({
     setText("decoderModeText", formatDecoderMode(mode));
   });
 
+  receiver.on("calibration-state", ({ state, detail }) => {
+    const message = detail || (
+      state === "locked"
+        ? "Calibration locked"
+        : state === "lost"
+          ? "Stage lost, realigning"
+          : "Align the sender stage"
+    );
+    setCalibrationUi(message);
+    if (state === "locked") {
+      setText("stageMeta", "Calibration locked. Keep the sender stage inside the guide while scanning continues.");
+    } else if (state === "lost") {
+      setText("stageMeta", "The stage moved out of alignment. Recenter it so scanning can continue.");
+    }
+  });
+
   receiver.on("camera-stop", () => {
     if (!receiver.scanning) {
       setText("stageMeta", "Scan stopped. Open the scan stage again when the sender is ready.");
     }
+    setText("cameraStatusText", "Camera: stopped");
     syncButtons(false);
   });
 
@@ -1146,6 +1185,8 @@ export function initReceiverDemo({
   setText("manifestMeta", "The file details will appear here once the first manifest is read.");
   setText("stageMeta", "Open the scan stage to start the camera and watch live progress.");
   setText("decoderModeText", "Decoder: preparing");
+  setText("cameraStatusText", "Camera: preparing");
+  setCalibrationUi("Align the sender stage");
   const progressText = byId("progressText");
   if (progressText) {
     progressText.textContent = "0%  |  No chunks received yet";
