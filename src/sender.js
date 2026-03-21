@@ -3,6 +3,10 @@ import { bytesToBase64Url } from "./utils/base64.js";
 import { splitBytes } from "./utils/chunk.js";
 import { getGridDimensions, groupIntoBatches } from "./grid.js";
 import {
+  DEFAULT_STAGE_STYLE,
+  drawGuidedStageFrame
+} from "./stage-layout.js";
+import {
   createSessionId,
   encodeManifestFrame,
   encodeChunkFrame,
@@ -32,15 +36,14 @@ function toQrSymbol(frame) {
 
 function getCanvasDisplaySize(canvas, symbolCount) {
   const width = Math.max(320, canvas.clientWidth || canvas.width || 640);
-  const { columns, rows } = getGridDimensions(symbolCount);
-  const size = Math.max(320, Math.round(width * (rows / columns)));
+  const size = Math.max(320, width);
   return {
     width,
     height: size
   };
 }
 
-async function renderQrGrid(canvas, qrSymbols, qrOptions) {
+async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
   const { columns, rows } = getGridDimensions(qrSymbols.length);
   const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
   const frameCanvas = document.createElement("canvas");
@@ -74,6 +77,39 @@ async function renderQrGrid(canvas, qrSymbols, qrOptions) {
   canvas.height = height;
   targetContext.clearRect(0, 0, width, height);
   targetContext.drawImage(frameCanvas, 0, 0, width, height);
+}
+
+async function renderGuidedQrGrid(canvas, qrSymbols, qrOptions) {
+  const { width } = getCanvasDisplaySize(canvas, qrSymbols.length);
+  const frameCanvas = document.createElement("canvas");
+  frameCanvas.width = width;
+  frameCanvas.height = width;
+  const context = frameCanvas.getContext("2d");
+  const layout = drawGuidedStageFrame(context, width, qrSymbols.length);
+
+  for (let index = 0; index < qrSymbols.length; index += 1) {
+    const cell = layout.cells[index];
+    if (!cell) {
+      break;
+    }
+
+    const tempCanvas = document.createElement("canvas");
+    const drawSize = Math.max(96, Math.min(cell.width, cell.height) - Math.round(Math.min(cell.width, cell.height) * 0.08));
+    await QRCode.toCanvas(tempCanvas, qrSymbols[index], {
+      ...qrOptions,
+      width: drawSize
+    });
+
+    const x = cell.x + Math.max(0, Math.floor((cell.width - drawSize) / 2));
+    const y = cell.y + Math.max(0, Math.floor((cell.height - drawSize) / 2));
+    context.drawImage(tempCanvas, x, y, drawSize, drawSize);
+  }
+
+  const targetContext = canvas.getContext("2d");
+  canvas.width = width;
+  canvas.height = width;
+  targetContext.clearRect(0, 0, width, width);
+  targetContext.drawImage(frameCanvas, 0, 0, width, width);
 }
 
 async function blobLikeToBytes(fileLike) {
@@ -339,6 +375,7 @@ export class AnimatedQrSender extends SimpleEmitter {
       scale: 6,
       ...(options.qrOptions ?? {})
     };
+    this.stageStyle = options.stageStyle ?? DEFAULT_STAGE_STYLE;
 
     this.prepared = null;
     this.frameIndex = 0;
@@ -389,16 +426,20 @@ export class AnimatedQrSender extends SimpleEmitter {
       safeIndex + this.loopIndex
     );
 
-    if (displayFrame.qrSymbols.length === 1) {
-      const { width, height } = getCanvasDisplaySize(this.canvas, 1);
-      this.canvas.width = width;
-      this.canvas.height = height;
-      await QRCode.toCanvas(this.canvas, displayFrame.qrSymbols[0], {
-        ...this.qrOptions,
-        width: Math.min(width, height)
-      });
+    if (this.stageStyle === "plain") {
+      if (displayFrame.qrSymbols.length === 1) {
+        const { width, height } = getCanvasDisplaySize(this.canvas, 1);
+        this.canvas.width = width;
+        this.canvas.height = height;
+        await QRCode.toCanvas(this.canvas, displayFrame.qrSymbols[0], {
+          ...this.qrOptions,
+          width: Math.min(width, height)
+        });
+      } else {
+        await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+      }
     } else {
-      await renderQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+      await renderGuidedQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
     }
 
     this.emit("frame", {

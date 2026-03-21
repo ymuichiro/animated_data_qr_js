@@ -100,6 +100,13 @@
         <div class="video-card video-card--modal">
           <div class="video-frame video-frame--modal">
             <video id="video" autoplay muted playsinline></video>
+            <div class="calibration-overlay" aria-hidden="true">
+              <span class="calibration-corner calibration-corner--tl"></span>
+              <span class="calibration-corner calibration-corner--tr"></span>
+              <span class="calibration-corner calibration-corner--br"></span>
+              <span class="calibration-corner calibration-corner--bl"></span>
+              <div id="calibrationStatusBadge" class="calibration-badge">Align the sender stage</div>
+            </div>
           </div>
           <p id="stageMeta" class="video-caption">Open the scan stage to start the camera and watch live progress.</p>
         </div>
@@ -111,6 +118,7 @@
           </div>
           <div id="progressText" class="progress-copy">0% | No chunks received yet</div>
           <div id="decoderModeText" class="progress-copy">Decoder: preparing</div>
+          <div id="cameraStatusText" class="progress-copy">Camera: preparing</div>
         </div>
 
         <div class="action-row action-row--stage">
@@ -132,7 +140,7 @@
         <ol class="help-list">
           <li>Open the scan stage when the sender is ready.</li>
           <li>Allow camera access as soon as the scan stage opens.</li>
-          <li>Keep the full sender screen inside the frame.</li>
+          <li>Align the sender stage with the calibration guide until the badge says it is locked.</li>
           <li>Watch the live progress in the modal until the main page shows the save or download action.</li>
           <li>Folder transfers can be saved directly as extracted files or downloaded as a standard ZIP fallback.</li>
         </ol>

@@ -80,6 +80,7 @@ export interface SenderOptions {
   payloadEncoding?: PayloadEncoding;
   symbolsPerFrame?: number;
   parityBlockDataChunks?: number;
+  stageStyle?: "guided" | "plain";
   qrOptions?: Record<string, unknown>;
 }
 
@@ -94,6 +95,8 @@ export interface ReceiverOptions {
   /** @deprecated Accepted temporarily but ignored. The decode passes are fixed internally. */
   tileScanGridSizes?: number[];
   decoderAssetBaseUrl?: string;
+  guidedCalibration?: boolean;
+  cameraOptimization?: boolean;
   cameraConstraints?: MediaStreamConstraints;
   scanCanvas?: HTMLCanvasElement | null;
 }
@@ -254,6 +257,7 @@ export class AnimatedQrSender {
   payloadEncoding: PayloadEncoding;
   symbolsPerFrame: number;
   parityBlockDataChunks: number;
+  stageStyle: "guided" | "plain";
   prepared: PreparedTransfer | null;
   frameIndex: number;
   running: boolean;

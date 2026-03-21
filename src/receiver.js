@@ -3,6 +3,18 @@ import { parseFrame } from "./protocol.js";
 import { SimpleEmitter } from "./emitter.js";
 import { buildDecodePasses } from "./decoder-passes.js";
 import { ZxingDecoderController } from "./decoder-controller.js";
+import { optimizeCameraTrack } from "./camera-optimization.js";
+import { buildGuidedDecodePasses } from "./stage-layout.js";
+import {
+  detectGuidedStage,
+  getCanonicalStageSize,
+  getDetectionReferenceSize,
+  isDetectionStable,
+  warpGuidedStage
+} from "./calibration.js";
+
+const CALIBRATION_LOCK_FRAMES = 3;
+const CALIBRATION_GRACE_FRAMES = 10;
 
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
@@ -34,6 +46,7 @@ function createSession(sessionId, totalChunks) {
     chunks: new Array(totalChunks).fill(null),
     parityChunks: new Map(),
     receivedChunks: 0,
+    manifestReceived: false,
     completed: false
   };
 }
@@ -139,6 +152,8 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       ? Array.from(new Set(options.tileScanGridSizes))
       : [2, 3];
     this.decoderAssetBaseUrl = options.decoderAssetBaseUrl ?? null;
+    this.guidedCalibration = options.guidedCalibration ?? true;
+    this.cameraOptimization = options.cameraOptimization ?? true;
     this.cameraConstraints = options.cameraConstraints ?? {
       audio: false,
       video: {
@@ -150,6 +165,16 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     this.stream = null;
     this.scanning = false;
     this.scanTimer = null;
+    this.scanInFlight = false;
+    this.videoFrameRequestId = null;
+    this.canonicalStageSize = getCanonicalStageSize(this.scanMaxDimension);
+
+    this.calibrationState = "searching";
+    this.calibrationDetail = "";
+    this.calibrationCandidatePoints = null;
+    this.calibrationStableFrames = 0;
+    this.calibrationLockedPoints = null;
+    this.calibrationLostFrames = 0;
 
     this.scanCanvas = options.scanCanvas ?? (
       typeof document !== "undefined" ? document.createElement("canvas") : null
@@ -180,6 +205,18 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     this.video.srcObject = this.stream;
     this.video.setAttribute("playsinline", "true");
     await this.video.play();
+
+    if (this.cameraOptimization) {
+      const [videoTrack] = this.stream.getVideoTracks();
+      const optimization = await optimizeCameraTrack(videoTrack, {
+        preferredWidth: 1280,
+        preferredHeight: 720,
+        preferredFrameRate: 30,
+        maxFrameRate: 30
+      });
+      this.emit("camera-tuned", optimization);
+    }
+
     this.emit("camera-start", { stream: this.stream });
     return this.stream;
   }
@@ -206,6 +243,8 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       return;
     }
 
+    this.#resetCalibration();
+
     const cameraPromise = this.stream
       ? Promise.resolve(this.stream)
       : this.startCamera(constraints ?? this.cameraConstraints);
@@ -215,21 +254,20 @@ export class AnimatedQrReceiver extends SimpleEmitter {
 
     this.scanning = true;
     this.emit("scan-start", {});
-    await this.#scanTick();
+    this.#scheduleNextScan();
   }
 
   stop() {
     this.scanning = false;
-    if (this.scanTimer !== null) {
-      clearTimeout(this.scanTimer);
-      this.scanTimer = null;
-    }
+    this.scanInFlight = false;
+    this.#cancelScheduledScan();
     this.emit("scan-stop", {});
   }
 
   reset(sessionId = null) {
     if (sessionId === null) {
       this.sessions.clear();
+      this.#resetCalibration();
       return;
     }
     this.sessions.delete(sessionId);
@@ -267,6 +305,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       session.fileSize = frame.fileSize;
       session.mimeType = frame.mimeType;
       session.fileName = frame.fileName;
+      session.manifestReceived = true;
       this.emit("manifest", {
         sessionId: session.sessionId,
         fileName: session.fileName,
@@ -329,7 +368,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     const progress = createProgressPayload(session);
     this.emit("progress", progress);
 
-    if (!session.completed && session.receivedChunks === session.totalChunks) {
+    if (!session.completed && session.manifestReceived && session.receivedChunks === session.totalChunks) {
       const allChunks = session.chunks.every((value) => value instanceof Uint8Array);
       if (!allChunks) {
         return { accepted: true, frame, result: null };
@@ -367,11 +406,74 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     return this.ingestFrame(frameInput);
   }
 
-  async #scanTick() {
-    if (!this.scanning) {
+  #resetCalibration() {
+    this.calibrationState = "";
+    this.calibrationDetail = "";
+    this.calibrationCandidatePoints = null;
+    this.calibrationStableFrames = 0;
+    this.calibrationLockedPoints = null;
+    this.calibrationLostFrames = 0;
+    this.#emitCalibrationState("searching", "Align the sender stage", { force: true });
+  }
+
+  #emitCalibrationState(state, detail, extra = {}) {
+    if (this.calibrationState === state && this.calibrationDetail === detail && !extra.force) {
+      return;
+    }
+    this.calibrationState = state;
+    this.calibrationDetail = detail ?? "";
+    this.emit("calibration-state", {
+      state,
+      detail,
+      ...extra
+    });
+  }
+
+  #cancelScheduledScan() {
+    if (this.scanTimer !== null) {
+      clearTimeout(this.scanTimer);
+      this.scanTimer = null;
+    }
+    if (
+      this.videoFrameRequestId !== null
+      && this.video
+      && typeof this.video.cancelVideoFrameCallback === "function"
+    ) {
+      this.video.cancelVideoFrameCallback(this.videoFrameRequestId);
+      this.videoFrameRequestId = null;
+    }
+  }
+
+  #scheduleNextScan() {
+    if (!this.scanning || !this.video) {
       return;
     }
 
+    this.#cancelScheduledScan();
+    if (typeof this.video.requestVideoFrameCallback === "function") {
+      this.videoFrameRequestId = this.video.requestVideoFrameCallback(() => {
+        this.videoFrameRequestId = null;
+        void this.#processScanFrame();
+      });
+      return;
+    }
+
+    this.scanTimer = setTimeout(() => {
+      this.scanTimer = null;
+      void this.#processScanFrame();
+    }, this.scanIntervalMs);
+  }
+
+  async #processScanFrame() {
+    if (!this.scanning) {
+      return;
+    }
+    if (this.scanInFlight) {
+      this.#scheduleNextScan();
+      return;
+    }
+
+    this.scanInFlight = true;
     try {
       const frameInputs = await this.#readFrameInputs();
       for (const frameInput of frameInputs) {
@@ -379,12 +481,11 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       }
     } catch (error) {
       this.emit("error", { error });
-    }
-
-    if (this.scanning) {
-      this.scanTimer = setTimeout(() => {
-        void this.#scanTick();
-      }, this.scanIntervalMs);
+    } finally {
+      this.scanInFlight = false;
+      if (this.scanning) {
+        this.#scheduleNextScan();
+      }
     }
   }
 
@@ -397,6 +498,16 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       expectedSymbolsPerFrame = Math.max(1, this.maxSymbolsPerFrame);
     }
     return expectedSymbolsPerFrame;
+  }
+
+  #getKnownSymbolsPerFrame() {
+    let known = null;
+    for (const session of this.sessions.values()) {
+      if (session.symbolsPerFrame && session.symbolsPerFrame > 0) {
+        known = Math.max(known ?? 0, session.symbolsPerFrame);
+      }
+    }
+    return known;
   }
 
   #dedupeFrameInputs(inputs) {
@@ -421,6 +532,83 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     });
   }
 
+  #updateCalibration(imageData) {
+    if (!this.guidedCalibration) {
+      return null;
+    }
+
+    const detection = detectGuidedStage(imageData);
+    if (detection?.points) {
+      if (
+        this.calibrationCandidatePoints
+        && isDetectionStable(
+          this.calibrationCandidatePoints,
+          detection.points,
+          getDetectionReferenceSize(detection.points)
+        )
+      ) {
+        this.calibrationStableFrames += 1;
+      } else {
+        this.calibrationStableFrames = 1;
+      }
+      this.calibrationCandidatePoints = detection.points;
+      this.calibrationLostFrames = 0;
+
+      if (this.calibrationStableFrames >= CALIBRATION_LOCK_FRAMES) {
+        this.calibrationLockedPoints = detection.points;
+        this.#emitCalibrationState("locked", "Calibration locked", {
+          score: detection.score
+        });
+      } else {
+        this.#emitCalibrationState("locking", "Locking on the sender stage", {
+          score: detection.score
+        });
+      }
+    } else if (this.calibrationLockedPoints) {
+      this.calibrationLostFrames += 1;
+      if (this.calibrationLostFrames === 1) {
+        this.#emitCalibrationState("lost", "Stage lost, realigning");
+      }
+      if (this.calibrationLostFrames > CALIBRATION_GRACE_FRAMES) {
+        this.calibrationLockedPoints = null;
+        this.calibrationCandidatePoints = null;
+        this.calibrationStableFrames = 0;
+        this.calibrationLostFrames = 0;
+        this.#emitCalibrationState("searching", "Align the sender stage");
+      }
+    } else {
+      this.calibrationStableFrames = 0;
+      this.calibrationCandidatePoints = null;
+      this.#emitCalibrationState("searching", "Align the sender stage");
+    }
+
+    if (!this.calibrationLockedPoints) {
+      return null;
+    }
+
+    return warpGuidedStage(imageData, this.calibrationLockedPoints, this.canonicalStageSize);
+  }
+
+  async #decodeLegacy(imageData, expectedSymbolsPerFrame) {
+    const decoderState = await this.decoder.decodeImageData(
+      imageData,
+      buildDecodePasses(imageData.width, imageData.height),
+      expectedSymbolsPerFrame
+    );
+    this.#emitDecoderMode(decoderState);
+    return decoderState;
+  }
+
+  async #decodeGuided(rectifiedImage, expectedSymbolsPerFrame) {
+    const decoderState = await this.decoder.decodeImageData(
+      rectifiedImage,
+      buildGuidedDecodePasses(rectifiedImage.width, this.#getKnownSymbolsPerFrame()),
+      expectedSymbolsPerFrame
+    );
+    this.#emitDecoderMode(decoderState);
+    return decoderState;
+  }
+
   async #readFrameInputs() {
     if (!this.video || this.video.readyState < 2 || !this.scanCanvas || !this.scanContext) {
       return [];
@@ -442,12 +630,17 @@ export class AnimatedQrReceiver extends SimpleEmitter {
 
     this.scanContext.drawImage(this.video, 0, 0, width, height);
     const imageData = this.scanContext.getImageData(0, 0, width, height);
-    const decoderState = await this.decoder.decodeImageData(
-      imageData,
-      buildDecodePasses(width, height),
-      this.#getExpectedSymbolsPerFrame()
-    );
-    this.#emitDecoderMode(decoderState);
+    const expectedSymbolsPerFrame = this.#getExpectedSymbolsPerFrame();
+
+    const rectifiedImage = this.#updateCalibration(imageData);
+    if (rectifiedImage) {
+      const guidedDecoderState = await this.#decodeGuided(rectifiedImage, expectedSymbolsPerFrame);
+      if (guidedDecoderState.frameInputs.length > 0 || this.calibrationState === "locked") {
+        return this.#dedupeFrameInputs(guidedDecoderState.frameInputs);
+      }
+    }
+
+    const decoderState = await this.#decodeLegacy(imageData, expectedSymbolsPerFrame);
     return this.#dedupeFrameInputs(decoderState.frameInputs);
   }
 }
