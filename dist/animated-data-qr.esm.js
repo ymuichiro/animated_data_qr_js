@@ -2611,15 +2611,17 @@ var MARKER_INNER_SIZE = 40;
 var MARKER_CENTER_OFFSET = 138;
 var PAYLOAD_INSET = 196;
 var PAYLOAD_GAP = 28;
+var PLAIN_PAYLOAD_INSET = 104;
+var PLAIN_PAYLOAD_GAP = 22;
 function scaleValue(value, size) {
   return Math.round(value / CANONICAL_STAGE_SIZE * size);
 }
-function createCellRects(symbolCount, payloadRect) {
+function createCellRects(symbolCount, payloadRect, gap = PAYLOAD_GAP) {
   if (symbolCount === 1) {
     return [{ ...payloadRect }];
   }
   if (symbolCount === 2) {
-    const cellWidth2 = Math.floor((payloadRect.width - PAYLOAD_GAP) / 2);
+    const cellWidth2 = Math.floor((payloadRect.width - gap) / 2);
     return [
       {
         x: payloadRect.x,
@@ -2636,8 +2638,8 @@ function createCellRects(symbolCount, payloadRect) {
     ];
   }
   if (symbolCount === 4) {
-    const cellWidth2 = Math.floor((payloadRect.width - PAYLOAD_GAP) / 2);
-    const cellHeight2 = Math.floor((payloadRect.height - PAYLOAD_GAP) / 2);
+    const cellWidth2 = Math.floor((payloadRect.width - gap) / 2);
+    const cellHeight2 = Math.floor((payloadRect.height - gap) / 2);
     return [
       { x: payloadRect.x, y: payloadRect.y, width: cellWidth2, height: cellHeight2 },
       {
@@ -2661,7 +2663,6 @@ function createCellRects(symbolCount, payloadRect) {
     ];
   }
   const { columns, rows } = getGridDimensions(symbolCount);
-  const gap = PAYLOAD_GAP;
   const cellWidth = Math.floor((payloadRect.width - gap * (columns - 1)) / columns);
   const cellHeight = Math.floor((payloadRect.height - gap * (rows - 1)) / rows);
   const rects = [];
@@ -2727,14 +2728,39 @@ function getStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
     payloadRect,
     markerCenters,
     markerRects,
-    cells: createCellRects(normalizedSymbolCount, payloadRect)
+    cells: createCellRects(normalizedSymbolCount, payloadRect, PAYLOAD_GAP)
   };
 }
 function getStageMarkerTargetPoints(size = CANONICAL_STAGE_SIZE) {
   return getStageLayout(1, size).markerCenters;
 }
+function getPlainStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
+  const normalizedSymbolCount = normalizeStageSymbolCount(symbolCount);
+  const payloadRect = {
+    x: scaleValue(PLAIN_PAYLOAD_INSET, size),
+    y: scaleValue(PLAIN_PAYLOAD_INSET, size),
+    width: size - scaleValue(PLAIN_PAYLOAD_INSET, size) * 2,
+    height: size - scaleValue(PLAIN_PAYLOAD_INSET, size) * 2
+  };
+  return {
+    size,
+    symbolCount: normalizedSymbolCount,
+    payloadRect,
+    cells: createCellRects(normalizedSymbolCount, payloadRect, scaleValue(PLAIN_PAYLOAD_GAP, size))
+  };
+}
 function addPass(passes, seen, region) {
-  const key = [region.x, region.y, region.width, region.height, Number(Boolean(region.tryHarder)), Number(Boolean(region.tryInvert))].join(":");
+  var _a2;
+  const key = [
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+    Number(Boolean(region.tryHarder)),
+    Number(Boolean(region.tryInvert)),
+    Number(Boolean(region.tryDenoise)),
+    (_a2 = region.binarizer) != null ? _a2 : ""
+  ].join(":");
   if (!seen.has(key)) {
     seen.add(key);
     passes.push(region);
@@ -2823,6 +2849,89 @@ function buildGuidedDecodePasses(size, symbolCount = null) {
       tryDenoise: true,
       binarizer: "GlobalHistogram"
     });
+  }
+  return passes;
+}
+function buildPlainDecodePasses(size, symbolCount = null) {
+  const seen = /* @__PURE__ */ new Set();
+  const passes = [];
+  addPass(passes, seen, {
+    x: 0,
+    y: 0,
+    width: size,
+    height: size,
+    tryHarder: false,
+    tryInvert: true,
+    tryDenoise: true,
+    binarizer: "LocalAverage"
+  });
+  const symbolCounts = symbolCount ? [normalizeStageSymbolCount(symbolCount)] : [1, 2, 4];
+  for (const count of symbolCounts) {
+    const layout = getPlainStageLayout(count, size);
+    for (const cell of layout.cells) {
+      const expanded = expandRegion(cell, size, 0.08);
+      addPass(passes, seen, {
+        ...expanded,
+        tryHarder: true,
+        tryInvert: true,
+        tryDenoise: true,
+        binarizer: "LocalAverage"
+      });
+    }
+    const payloadExpanded = expandRegion(layout.payloadRect, size, 0.03);
+    const halfWidth = Math.floor((payloadExpanded.width - 14) / 2);
+    const halfHeight = Math.floor((payloadExpanded.height - 14) / 2);
+    addPass(passes, seen, {
+      x: payloadExpanded.x,
+      y: payloadExpanded.y,
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x + payloadExpanded.width - Math.max(1, halfWidth),
+      y: payloadExpanded.y,
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x,
+      y: payloadExpanded.y + payloadExpanded.height - Math.max(1, halfHeight),
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x + payloadExpanded.width - Math.max(1, halfWidth),
+      y: payloadExpanded.y + payloadExpanded.height - Math.max(1, halfHeight),
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+  }
+  return passes;
+}
+function buildRectifiedDecodePasses(size, symbolCount = null) {
+  const seen = /* @__PURE__ */ new Set();
+  const passes = [];
+  for (const pass of buildPlainDecodePasses(size, symbolCount)) {
+    addPass(passes, seen, pass);
+  }
+  for (const pass of buildGuidedDecodePasses(size, symbolCount)) {
+    addPass(passes, seen, pass);
   }
   return passes;
 }
@@ -2990,6 +3099,8 @@ function estimateTransferStats({
 }
 
 // src/sender.js
+var DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES = 10;
+var DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES = 2;
 function toQrSymbol(frame) {
   if (typeof frame === "string") {
     return frame;
@@ -3008,28 +3119,30 @@ function getCanvasDisplaySize(canvas, symbolCount) {
   };
 }
 async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
-  const { columns, rows } = getGridDimensions(qrSymbols.length);
   const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
   const frameCanvas = document.createElement("canvas");
   const context = frameCanvas.getContext("2d");
-  const gap = 12;
-  const cellWidth = Math.floor((width - gap * (columns + 1)) / columns);
-  const cellHeight = Math.floor((height - gap * (rows + 1)) / rows);
-  const drawSize = Math.max(64, Math.min(cellWidth, cellHeight));
+  const layout = getPlainStageLayout(qrSymbols.length, width);
   frameCanvas.width = width;
   frameCanvas.height = height;
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, height);
   for (let index = 0; index < qrSymbols.length; index += 1) {
+    const cell = layout.cells[index];
+    if (!cell) {
+      break;
+    }
     const tempCanvas = document.createElement("canvas");
+    const drawSize = Math.max(
+      96,
+      Math.min(cell.width, cell.height) - Math.round(Math.min(cell.width, cell.height) * 0.06)
+    );
     await import_qrcode.default.toCanvas(tempCanvas, qrSymbols[index], {
       ...qrOptions,
       width: drawSize
     });
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const x = gap + column * (cellWidth + gap) + Math.max(0, Math.floor((cellWidth - drawSize) / 2));
-    const y = gap + row * (cellHeight + gap) + Math.max(0, Math.floor((cellHeight - drawSize) / 2));
+    const x = cell.x + Math.max(0, Math.floor((cell.width - drawSize) / 2));
+    const y = cell.y + Math.max(0, Math.floor((cell.height - drawSize) / 2));
     context.drawImage(tempCanvas, x, y, drawSize, drawSize);
   }
   const targetContext = canvas.getContext("2d");
@@ -3164,6 +3277,23 @@ function rotateFrameBatch(displayFrame, rotation) {
       ...displayFrame.qrSymbols.slice(0, offset)
     ]
   };
+}
+function normalizeFrameCount(value, fallback) {
+  if (!Number.isInteger(value) || value <= 0) {
+    return fallback;
+  }
+  return value;
+}
+function shouldRenderGuidedCalibrationFrame(renderCount, intervalFrames = DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES, burstFrames = DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES) {
+  const safeBurstFrames = Math.max(1, normalizeFrameCount(burstFrames, DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES));
+  const safeIntervalFrames = Math.max(
+    safeBurstFrames + 1,
+    normalizeFrameCount(intervalFrames, DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES)
+  );
+  if (!Number.isInteger(renderCount) || renderCount < 0) {
+    return true;
+  }
+  return renderCount % safeIntervalFrames < safeBurstFrames;
 }
 function getLoopDisplayFrame(prepared, displayFrameIndex, loopIndex = 0) {
   var _a2;
@@ -3301,9 +3431,18 @@ var AnimatedQrSender = class extends SimpleEmitter {
       ...(_g = options.qrOptions) != null ? _g : {}
     };
     this.stageStyle = (_h = options.stageStyle) != null ? _h : DEFAULT_STAGE_STYLE;
+    this.guidedCalibrationIntervalFrames = normalizeFrameCount(
+      options.guidedCalibrationIntervalFrames,
+      DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES
+    );
+    this.guidedCalibrationBurstFrames = normalizeFrameCount(
+      options.guidedCalibrationBurstFrames,
+      DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES
+    );
     this.prepared = null;
     this.frameIndex = 0;
     this.loopIndex = 0;
+    this.renderCount = 0;
     this.running = false;
     this.timer = null;
   }
@@ -3325,6 +3464,7 @@ var AnimatedQrSender = class extends SimpleEmitter {
     this.prepared = transfer;
     this.frameIndex = 0;
     this.loopIndex = 0;
+    this.renderCount = 0;
     this.emit("prepared", transfer);
     return transfer;
   }
@@ -3344,25 +3484,21 @@ var AnimatedQrSender = class extends SimpleEmitter {
       getLoopDisplayFrame(this.prepared, safeIndex, this.loopIndex),
       safeIndex + this.loopIndex
     );
-    if (this.stageStyle === "plain") {
-      if (displayFrame.qrSymbols.length === 1) {
-        const { width, height } = getCanvasDisplaySize(this.canvas, 1);
-        this.canvas.width = width;
-        this.canvas.height = height;
-        await import_qrcode.default.toCanvas(this.canvas, displayFrame.qrSymbols[0], {
-          ...this.qrOptions,
-          width: Math.min(width, height)
-        });
-      } else {
-        await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
-      }
-    } else {
+    const renderGuidedStage = this.stageStyle !== "plain" && shouldRenderGuidedCalibrationFrame(
+      this.renderCount,
+      this.guidedCalibrationIntervalFrames,
+      this.guidedCalibrationBurstFrames
+    );
+    if (renderGuidedStage) {
       await renderGuidedQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+    } else {
+      await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
     }
     this.emit("frame", {
       frameIndex: safeIndex,
       symbols: displayFrame.symbols,
       symbolCount: displayFrame.symbols.length,
+      stageMode: renderGuidedStage ? "guided" : "plain",
       sessionId: this.prepared.sessionId
     });
     return displayFrame.symbols;
@@ -3397,6 +3533,7 @@ tick_fn = async function() {
   }
   try {
     await this.renderFrameAt(this.frameIndex);
+    this.renderCount += 1;
     this.frameIndex = (this.frameIndex + 1) % this.prepared.displayFrames.length;
     if (this.frameIndex === 0) {
       this.loopIndex += 1;
@@ -6046,6 +6183,14 @@ function selectBestStage(candidates, totalPixels) {
     if (minSide < 24 || maxSide / Math.max(1, minSide) > 2.6) {
       continue;
     }
+    const averageMarkerSize = set.reduce(
+      (sum, candidate) => sum + Math.max(candidate.width, candidate.height),
+      0
+    ) / set.length;
+    const markerToStageRatio = averageMarkerSize / Math.max(1, minSide);
+    if (markerToStageRatio < 0.08 || markerToStageRatio > 0.24) {
+      continue;
+    }
     const area = polygonArea(ordered);
     if (area < totalPixels * 0.07) {
       continue;
@@ -6225,8 +6370,15 @@ function getCanonicalStageSize(scanMaxDimension) {
 }
 
 // src/receiver.js
-var CALIBRATION_LOCK_FRAMES = 3;
-var CALIBRATION_GRACE_FRAMES = 10;
+var CALIBRATION_LOCK_FRAMES = 2;
+var CALIBRATION_LOST_MS = 3500;
+var CALIBRATION_GRACE_MS = 5e3;
+function getNow() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
     return { width, height };
@@ -6332,7 +6484,7 @@ function createDownloadLink(result, anchorElement = null) {
   anchor.download = result.fileName;
   return { url, anchor };
 }
-var _AnimatedQrReceiver_instances, resetCalibration_fn, emitCalibrationState_fn, cancelScheduledScan_fn, scheduleNextScan_fn, processScanFrame_fn, getExpectedSymbolsPerFrame_fn, getKnownSymbolsPerFrame_fn, dedupeFrameInputs_fn, emitDecoderMode_fn, updateCalibration_fn, decodeLegacy_fn, decodeGuided_fn, readFrameInputs_fn;
+var _AnimatedQrReceiver_instances, resetCalibration_fn, emitCalibrationState_fn, cancelScheduledScan_fn, scheduleNextScan_fn, processScanFrame_fn, getExpectedSymbolsPerFrame_fn, getKnownSymbolsPerFrame_fn, dedupeFrameInputs_fn, emitDecoderMode_fn, updateCalibration_fn, decodeLegacy_fn, decodeRectified_fn, readFrameInputs_fn;
 var AnimatedQrReceiver = class extends SimpleEmitter {
   constructor(options = {}) {
     var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k, _l, _m;
@@ -6366,7 +6518,7 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     this.calibrationCandidatePoints = null;
     this.calibrationStableFrames = 0;
     this.calibrationLockedPoints = null;
-    this.calibrationLostFrames = 0;
+    this.calibrationLastDetectionAt = 0;
     this.scanCanvas = (_k = options.scanCanvas) != null ? _k : typeof document !== "undefined" ? document.createElement("canvas") : null;
     this.scanContext = (_m = (_l = this.scanCanvas) == null ? void 0 : _l.getContext("2d", { willReadFrequently: true })) != null ? _m : null;
     this.decoder = new ZxingDecoderController({
@@ -6571,8 +6723,8 @@ resetCalibration_fn = function() {
   this.calibrationCandidatePoints = null;
   this.calibrationStableFrames = 0;
   this.calibrationLockedPoints = null;
-  this.calibrationLostFrames = 0;
-  __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Align the sender stage", { force: true });
+  this.calibrationLastDetectionAt = 0;
+  __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Catch a guide frame to lock", { force: true });
 };
 emitCalibrationState_fn = function(state, detail, extra = {}) {
   if (this.calibrationState === state && this.calibrationDetail === detail && !extra.force) {
@@ -6676,7 +6828,7 @@ emitDecoderMode_fn = function(state, force = false) {
     reason: (_a2 = state.reason) != null ? _a2 : null
   });
 };
-updateCalibration_fn = function(imageData) {
+updateCalibration_fn = function(imageData, now = getNow()) {
   if (!this.guidedCalibration) {
     return null;
   }
@@ -6692,8 +6844,8 @@ updateCalibration_fn = function(imageData) {
       this.calibrationStableFrames = 1;
     }
     this.calibrationCandidatePoints = detection.points;
-    this.calibrationLostFrames = 0;
-    if (this.calibrationStableFrames >= CALIBRATION_LOCK_FRAMES) {
+    this.calibrationLastDetectionAt = now;
+    if (this.calibrationLockedPoints || this.calibrationStableFrames >= CALIBRATION_LOCK_FRAMES) {
       this.calibrationLockedPoints = detection.points;
       __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "locked", "Calibration locked", {
         score: detection.score
@@ -6704,21 +6856,20 @@ updateCalibration_fn = function(imageData) {
       });
     }
   } else if (this.calibrationLockedPoints) {
-    this.calibrationLostFrames += 1;
-    if (this.calibrationLostFrames === 1) {
-      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "lost", "Stage lost, realigning");
-    }
-    if (this.calibrationLostFrames > CALIBRATION_GRACE_FRAMES) {
+    const timeSinceDetection = now - this.calibrationLastDetectionAt;
+    if (timeSinceDetection > CALIBRATION_GRACE_MS) {
       this.calibrationLockedPoints = null;
       this.calibrationCandidatePoints = null;
       this.calibrationStableFrames = 0;
-      this.calibrationLostFrames = 0;
-      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Align the sender stage");
+      this.calibrationLastDetectionAt = 0;
+      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Catch a guide frame to lock");
+    } else if (timeSinceDetection > CALIBRATION_LOST_MS) {
+      __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "lost", "Lock lost, catch the next guide frame");
     }
   } else {
     this.calibrationStableFrames = 0;
     this.calibrationCandidatePoints = null;
-    __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Align the sender stage");
+    __privateMethod(this, _AnimatedQrReceiver_instances, emitCalibrationState_fn).call(this, "searching", "Catch a guide frame to lock");
   }
   if (!this.calibrationLockedPoints) {
     return null;
@@ -6734,10 +6885,10 @@ decodeLegacy_fn = async function(imageData, expectedSymbolsPerFrame) {
   __privateMethod(this, _AnimatedQrReceiver_instances, emitDecoderMode_fn).call(this, decoderState);
   return decoderState;
 };
-decodeGuided_fn = async function(rectifiedImage, expectedSymbolsPerFrame) {
+decodeRectified_fn = async function(rectifiedImage, expectedSymbolsPerFrame) {
   const decoderState = await this.decoder.decodeImageData(
     rectifiedImage,
-    buildGuidedDecodePasses(rectifiedImage.width, __privateMethod(this, _AnimatedQrReceiver_instances, getKnownSymbolsPerFrame_fn).call(this)),
+    buildRectifiedDecodePasses(rectifiedImage.width, __privateMethod(this, _AnimatedQrReceiver_instances, getKnownSymbolsPerFrame_fn).call(this)),
     expectedSymbolsPerFrame
   );
   __privateMethod(this, _AnimatedQrReceiver_instances, emitDecoderMode_fn).call(this, decoderState);
@@ -6762,11 +6913,11 @@ readFrameInputs_fn = async function() {
   this.scanContext.drawImage(this.video, 0, 0, width, height);
   const imageData = this.scanContext.getImageData(0, 0, width, height);
   const expectedSymbolsPerFrame = __privateMethod(this, _AnimatedQrReceiver_instances, getExpectedSymbolsPerFrame_fn).call(this);
-  const rectifiedImage = __privateMethod(this, _AnimatedQrReceiver_instances, updateCalibration_fn).call(this, imageData);
+  const rectifiedImage = __privateMethod(this, _AnimatedQrReceiver_instances, updateCalibration_fn).call(this, imageData, getNow());
   if (rectifiedImage) {
-    const guidedDecoderState = await __privateMethod(this, _AnimatedQrReceiver_instances, decodeGuided_fn).call(this, rectifiedImage, expectedSymbolsPerFrame);
-    if (guidedDecoderState.frameInputs.length > 0 || this.calibrationState === "locked") {
-      return __privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, guidedDecoderState.frameInputs);
+    const rectifiedDecoderState = await __privateMethod(this, _AnimatedQrReceiver_instances, decodeRectified_fn).call(this, rectifiedImage, expectedSymbolsPerFrame);
+    if (rectifiedDecoderState.frameInputs.length > 0) {
+      return __privateMethod(this, _AnimatedQrReceiver_instances, dedupeFrameInputs_fn).call(this, rectifiedDecoderState.frameInputs);
     }
   }
   const decoderState = await __privateMethod(this, _AnimatedQrReceiver_instances, decodeLegacy_fn).call(this, imageData, expectedSymbolsPerFrame);

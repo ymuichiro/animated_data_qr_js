@@ -849,7 +849,7 @@ export function initReceiverDemo({
     setText("manifestMeta", "The file details will appear here once the first manifest is read.");
     setText("decoderModeText", "Decoder: preparing");
     setText("cameraStatusText", "Camera: preparing");
-    setCalibrationUi("Align the sender stage");
+    setCalibrationUi("Catch a guide frame to lock");
 
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
@@ -867,7 +867,7 @@ export function initReceiverDemo({
     setText("stageMeta", "Requesting camera access and preparing the scan stage...");
     setText("decoderModeText", "Decoder: preparing");
     setText("cameraStatusText", "Camera: requesting access");
-    setCalibrationUi("Align the sender stage");
+    setCalibrationUi("Catch a guide frame to lock");
     setStatus({
       tone: "working",
       title: "Starting camera",
@@ -976,7 +976,7 @@ export function initReceiverDemo({
 
   receiver.on("camera-start", () => {
     openScanDialog();
-    setText("stageMeta", "Camera is live. Align the full sender stage so the calibration guide can lock.");
+    setText("stageMeta", "Camera is live. Catch one of the sender guide pulses to lock, then keep the QR large and steady.");
     syncButtons(true);
   });
 
@@ -1016,13 +1016,13 @@ export function initReceiverDemo({
         ? "Calibration locked"
         : state === "lost"
           ? "Stage lost, realigning"
-          : "Align the sender stage"
+          : "Catch a guide frame to lock"
     );
     setCalibrationUi(message);
     if (state === "locked") {
-      setText("stageMeta", "Calibration locked. Keep the sender stage inside the guide while scanning continues.");
+      setText("stageMeta", "Calibration locked. Keep the QR large and steady while the receiver refreshes the lock on later guide pulses.");
     } else if (state === "lost") {
-      setText("stageMeta", "The stage moved out of alignment. Recenter it so scanning can continue.");
+      setText("stageMeta", "The lock was lost. Pull back briefly until a guide pulse is visible again, then continue scanning.");
     }
   });
 
@@ -1186,7 +1186,7 @@ export function initReceiverDemo({
   setText("stageMeta", "Open the scan stage to start the camera and watch live progress.");
   setText("decoderModeText", "Decoder: preparing");
   setText("cameraStatusText", "Camera: preparing");
-  setCalibrationUi("Align the sender stage");
+  setCalibrationUi("Catch a guide frame to lock");
   const progressText = byId("progressText");
   if (progressText) {
     progressText.textContent = "0%  |  No chunks received yet";
