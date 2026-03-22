@@ -81,6 +81,8 @@ export interface SenderOptions {
   symbolsPerFrame?: number;
   parityBlockDataChunks?: number;
   stageStyle?: "guided" | "plain";
+  guidedCalibrationIntervalFrames?: number;
+  guidedCalibrationBurstFrames?: number;
   qrOptions?: Record<string, unknown>;
 }
 

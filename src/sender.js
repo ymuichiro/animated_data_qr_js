@@ -1,10 +1,11 @@
 import QRCode from "qrcode";
 import { bytesToBase64Url } from "./utils/base64.js";
 import { splitBytes } from "./utils/chunk.js";
-import { getGridDimensions, groupIntoBatches } from "./grid.js";
+import { groupIntoBatches } from "./grid.js";
 import {
   DEFAULT_STAGE_STYLE,
-  drawGuidedStageFrame
+  drawGuidedStageFrame,
+  getPlainStageLayout
 } from "./stage-layout.js";
 import {
   createSessionId,
@@ -22,6 +23,9 @@ import {
   DEFAULT_SYMBOLS_PER_FRAME,
   estimateTransferStats
 } from "./tuning.js";
+
+const DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES = 10;
+const DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES = 2;
 
 function toQrSymbol(frame) {
   if (typeof frame === "string") {
@@ -44,14 +48,10 @@ function getCanvasDisplaySize(canvas, symbolCount) {
 }
 
 async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
-  const { columns, rows } = getGridDimensions(qrSymbols.length);
   const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
   const frameCanvas = document.createElement("canvas");
   const context = frameCanvas.getContext("2d");
-  const gap = 12;
-  const cellWidth = Math.floor((width - (gap * (columns + 1))) / columns);
-  const cellHeight = Math.floor((height - (gap * (rows + 1))) / rows);
-  const drawSize = Math.max(64, Math.min(cellWidth, cellHeight));
+  const layout = getPlainStageLayout(qrSymbols.length, width);
 
   frameCanvas.width = width;
   frameCanvas.height = height;
@@ -59,16 +59,22 @@ async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
   context.fillRect(0, 0, width, height);
 
   for (let index = 0; index < qrSymbols.length; index += 1) {
+    const cell = layout.cells[index];
+    if (!cell) {
+      break;
+    }
     const tempCanvas = document.createElement("canvas");
+    const drawSize = Math.max(
+      96,
+      Math.min(cell.width, cell.height) - Math.round(Math.min(cell.width, cell.height) * 0.06)
+    );
     await QRCode.toCanvas(tempCanvas, qrSymbols[index], {
       ...qrOptions,
       width: drawSize
     });
 
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const x = gap + (column * (cellWidth + gap)) + Math.max(0, Math.floor((cellWidth - drawSize) / 2));
-    const y = gap + (row * (cellHeight + gap)) + Math.max(0, Math.floor((cellHeight - drawSize) / 2));
+    const x = cell.x + Math.max(0, Math.floor((cell.width - drawSize) / 2));
+    const y = cell.y + Math.max(0, Math.floor((cell.height - drawSize) / 2));
     context.drawImage(tempCanvas, x, y, drawSize, drawSize);
   }
 
@@ -221,6 +227,29 @@ function rotateFrameBatch(displayFrame, rotation) {
       ...displayFrame.qrSymbols.slice(0, offset)
     ]
   };
+}
+
+function normalizeFrameCount(value, fallback) {
+  if (!Number.isInteger(value) || value <= 0) {
+    return fallback;
+  }
+  return value;
+}
+
+export function shouldRenderGuidedCalibrationFrame(
+  renderCount,
+  intervalFrames = DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES,
+  burstFrames = DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES
+) {
+  const safeBurstFrames = Math.max(1, normalizeFrameCount(burstFrames, DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES));
+  const safeIntervalFrames = Math.max(
+    safeBurstFrames + 1,
+    normalizeFrameCount(intervalFrames, DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES)
+  );
+  if (!Number.isInteger(renderCount) || renderCount < 0) {
+    return true;
+  }
+  return (renderCount % safeIntervalFrames) < safeBurstFrames;
 }
 
 function getLoopDisplayFrame(prepared, displayFrameIndex, loopIndex = 0) {
@@ -376,10 +405,19 @@ export class AnimatedQrSender extends SimpleEmitter {
       ...(options.qrOptions ?? {})
     };
     this.stageStyle = options.stageStyle ?? DEFAULT_STAGE_STYLE;
+    this.guidedCalibrationIntervalFrames = normalizeFrameCount(
+      options.guidedCalibrationIntervalFrames,
+      DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES
+    );
+    this.guidedCalibrationBurstFrames = normalizeFrameCount(
+      options.guidedCalibrationBurstFrames,
+      DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES
+    );
 
     this.prepared = null;
     this.frameIndex = 0;
     this.loopIndex = 0;
+    this.renderCount = 0;
     this.running = false;
     this.timer = null;
   }
@@ -403,6 +441,7 @@ export class AnimatedQrSender extends SimpleEmitter {
     this.prepared = transfer;
     this.frameIndex = 0;
     this.loopIndex = 0;
+    this.renderCount = 0;
     this.emit("prepared", transfer);
     return transfer;
   }
@@ -426,26 +465,24 @@ export class AnimatedQrSender extends SimpleEmitter {
       safeIndex + this.loopIndex
     );
 
-    if (this.stageStyle === "plain") {
-      if (displayFrame.qrSymbols.length === 1) {
-        const { width, height } = getCanvasDisplaySize(this.canvas, 1);
-        this.canvas.width = width;
-        this.canvas.height = height;
-        await QRCode.toCanvas(this.canvas, displayFrame.qrSymbols[0], {
-          ...this.qrOptions,
-          width: Math.min(width, height)
-        });
-      } else {
-        await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
-      }
-    } else {
+    const renderGuidedStage = this.stageStyle !== "plain"
+      && shouldRenderGuidedCalibrationFrame(
+        this.renderCount,
+        this.guidedCalibrationIntervalFrames,
+        this.guidedCalibrationBurstFrames
+      );
+
+    if (renderGuidedStage) {
       await renderGuidedQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+    } else {
+      await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
     }
 
     this.emit("frame", {
       frameIndex: safeIndex,
       symbols: displayFrame.symbols,
       symbolCount: displayFrame.symbols.length,
+      stageMode: renderGuidedStage ? "guided" : "plain",
       sessionId: this.prepared.sessionId
     });
     return displayFrame.symbols;
@@ -483,6 +520,7 @@ export class AnimatedQrSender extends SimpleEmitter {
 
     try {
       await this.renderFrameAt(this.frameIndex);
+      this.renderCount += 1;
       this.frameIndex = (this.frameIndex + 1) % this.prepared.displayFrames.length;
       if (this.frameIndex === 0) {
         this.loopIndex += 1;

@@ -4,7 +4,7 @@ import { SimpleEmitter } from "./emitter.js";
 import { buildDecodePasses } from "./decoder-passes.js";
 import { ZxingDecoderController } from "./decoder-controller.js";
 import { optimizeCameraTrack } from "./camera-optimization.js";
-import { buildGuidedDecodePasses } from "./stage-layout.js";
+import { buildRectifiedDecodePasses } from "./stage-layout.js";
 import {
   detectGuidedStage,
   getCanonicalStageSize,
@@ -13,8 +13,16 @@ import {
   warpGuidedStage
 } from "./calibration.js";
 
-const CALIBRATION_LOCK_FRAMES = 3;
-const CALIBRATION_GRACE_FRAMES = 10;
+const CALIBRATION_LOCK_FRAMES = 2;
+const CALIBRATION_LOST_MS = 3500;
+const CALIBRATION_GRACE_MS = 5000;
+
+function getNow() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
 
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
@@ -174,7 +182,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     this.calibrationCandidatePoints = null;
     this.calibrationStableFrames = 0;
     this.calibrationLockedPoints = null;
-    this.calibrationLostFrames = 0;
+    this.calibrationLastDetectionAt = 0;
 
     this.scanCanvas = options.scanCanvas ?? (
       typeof document !== "undefined" ? document.createElement("canvas") : null
@@ -412,8 +420,8 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     this.calibrationCandidatePoints = null;
     this.calibrationStableFrames = 0;
     this.calibrationLockedPoints = null;
-    this.calibrationLostFrames = 0;
-    this.#emitCalibrationState("searching", "Align the sender stage", { force: true });
+    this.calibrationLastDetectionAt = 0;
+    this.#emitCalibrationState("searching", "Catch a guide frame to lock", { force: true });
   }
 
   #emitCalibrationState(state, detail, extra = {}) {
@@ -532,7 +540,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     });
   }
 
-  #updateCalibration(imageData) {
+  #updateCalibration(imageData, now = getNow()) {
     if (!this.guidedCalibration) {
       return null;
     }
@@ -552,9 +560,9 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         this.calibrationStableFrames = 1;
       }
       this.calibrationCandidatePoints = detection.points;
-      this.calibrationLostFrames = 0;
+      this.calibrationLastDetectionAt = now;
 
-      if (this.calibrationStableFrames >= CALIBRATION_LOCK_FRAMES) {
+      if (this.calibrationLockedPoints || this.calibrationStableFrames >= CALIBRATION_LOCK_FRAMES) {
         this.calibrationLockedPoints = detection.points;
         this.#emitCalibrationState("locked", "Calibration locked", {
           score: detection.score
@@ -565,21 +573,20 @@ export class AnimatedQrReceiver extends SimpleEmitter {
         });
       }
     } else if (this.calibrationLockedPoints) {
-      this.calibrationLostFrames += 1;
-      if (this.calibrationLostFrames === 1) {
-        this.#emitCalibrationState("lost", "Stage lost, realigning");
-      }
-      if (this.calibrationLostFrames > CALIBRATION_GRACE_FRAMES) {
+      const timeSinceDetection = now - this.calibrationLastDetectionAt;
+      if (timeSinceDetection > CALIBRATION_GRACE_MS) {
         this.calibrationLockedPoints = null;
         this.calibrationCandidatePoints = null;
         this.calibrationStableFrames = 0;
-        this.calibrationLostFrames = 0;
-        this.#emitCalibrationState("searching", "Align the sender stage");
+        this.calibrationLastDetectionAt = 0;
+        this.#emitCalibrationState("searching", "Catch a guide frame to lock");
+      } else if (timeSinceDetection > CALIBRATION_LOST_MS) {
+        this.#emitCalibrationState("lost", "Lock lost, catch the next guide frame");
       }
     } else {
       this.calibrationStableFrames = 0;
       this.calibrationCandidatePoints = null;
-      this.#emitCalibrationState("searching", "Align the sender stage");
+      this.#emitCalibrationState("searching", "Catch a guide frame to lock");
     }
 
     if (!this.calibrationLockedPoints) {
@@ -599,10 +606,10 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     return decoderState;
   }
 
-  async #decodeGuided(rectifiedImage, expectedSymbolsPerFrame) {
+  async #decodeRectified(rectifiedImage, expectedSymbolsPerFrame) {
     const decoderState = await this.decoder.decodeImageData(
       rectifiedImage,
-      buildGuidedDecodePasses(rectifiedImage.width, this.#getKnownSymbolsPerFrame()),
+      buildRectifiedDecodePasses(rectifiedImage.width, this.#getKnownSymbolsPerFrame()),
       expectedSymbolsPerFrame
     );
     this.#emitDecoderMode(decoderState);
@@ -632,11 +639,11 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     const imageData = this.scanContext.getImageData(0, 0, width, height);
     const expectedSymbolsPerFrame = this.#getExpectedSymbolsPerFrame();
 
-    const rectifiedImage = this.#updateCalibration(imageData);
+    const rectifiedImage = this.#updateCalibration(imageData, getNow());
     if (rectifiedImage) {
-      const guidedDecoderState = await this.#decodeGuided(rectifiedImage, expectedSymbolsPerFrame);
-      if (guidedDecoderState.frameInputs.length > 0 || this.calibrationState === "locked") {
-        return this.#dedupeFrameInputs(guidedDecoderState.frameInputs);
+      const rectifiedDecoderState = await this.#decodeRectified(rectifiedImage, expectedSymbolsPerFrame);
+      if (rectifiedDecoderState.frameInputs.length > 0) {
+        return this.#dedupeFrameInputs(rectifiedDecoderState.frameInputs);
       }
     }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getStageLayout,
+  getPlainStageLayout,
   getStageMarkerTargetPoints
 } from "../src/stage-layout.js";
 import {
@@ -91,6 +92,8 @@ describe("guided stage layout", () => {
     const single = getStageLayout(1, 1000);
     const dual = getStageLayout(2, 1000);
     const quad = getStageLayout(4, 1000);
+    const plainSingle = getPlainStageLayout(1, 1000);
+    const plainDual = getPlainStageLayout(2, 1000);
 
     expect(single.cells).toHaveLength(1);
     expect(single.cells[0]).toEqual(single.payloadRect);
@@ -99,6 +102,8 @@ describe("guided stage layout", () => {
     expect(quad.cells).toHaveLength(4);
     expect(quad.cells[0].width).toBe(quad.cells[1].width);
     expect(quad.cells[0].height).toBe(quad.cells[2].height);
+    expect(plainSingle.cells[0].width).toBeGreaterThan(single.cells[0].width);
+    expect(plainDual.cells[0].width).toBeGreaterThan(dual.cells[0].width);
   });
 
   it("detects the guided fiducials after a mild perspective warp", () => {

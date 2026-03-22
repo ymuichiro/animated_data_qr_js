@@ -10,18 +10,20 @@ const MARKER_INNER_SIZE = 40;
 const MARKER_CENTER_OFFSET = 138;
 const PAYLOAD_INSET = 196;
 const PAYLOAD_GAP = 28;
+const PLAIN_PAYLOAD_INSET = 104;
+const PLAIN_PAYLOAD_GAP = 22;
 
 function scaleValue(value, size) {
   return Math.round((value / CANONICAL_STAGE_SIZE) * size);
 }
 
-function createCellRects(symbolCount, payloadRect) {
+function createCellRects(symbolCount, payloadRect, gap = PAYLOAD_GAP) {
   if (symbolCount === 1) {
     return [{ ...payloadRect }];
   }
 
   if (symbolCount === 2) {
-    const cellWidth = Math.floor((payloadRect.width - PAYLOAD_GAP) / 2);
+    const cellWidth = Math.floor((payloadRect.width - gap) / 2);
     return [
       {
         x: payloadRect.x,
@@ -39,8 +41,8 @@ function createCellRects(symbolCount, payloadRect) {
   }
 
   if (symbolCount === 4) {
-    const cellWidth = Math.floor((payloadRect.width - PAYLOAD_GAP) / 2);
-    const cellHeight = Math.floor((payloadRect.height - PAYLOAD_GAP) / 2);
+    const cellWidth = Math.floor((payloadRect.width - gap) / 2);
+    const cellHeight = Math.floor((payloadRect.height - gap) / 2);
     return [
       { x: payloadRect.x, y: payloadRect.y, width: cellWidth, height: cellHeight },
       {
@@ -65,7 +67,6 @@ function createCellRects(symbolCount, payloadRect) {
   }
 
   const { columns, rows } = getGridDimensions(symbolCount);
-  const gap = PAYLOAD_GAP;
   const cellWidth = Math.floor((payloadRect.width - (gap * (columns - 1))) / columns);
   const cellHeight = Math.floor((payloadRect.height - (gap * (rows - 1))) / rows);
   const rects = [];
@@ -122,11 +123,11 @@ export function getStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
     center,
     x: Math.round(center.x - (markerSize / 2)),
     y: Math.round(center.y - (markerSize / 2)),
-    width: markerSize,
-    height: markerSize,
-    innerX: Math.round(center.x - (markerInnerSize / 2)),
-    innerY: Math.round(center.y - (markerInnerSize / 2)),
-    innerSize: markerInnerSize
+      width: markerSize,
+      height: markerSize,
+      innerX: Math.round(center.x - (markerInnerSize / 2)),
+      innerY: Math.round(center.y - (markerInnerSize / 2)),
+      innerSize: markerInnerSize
   }));
 
   return {
@@ -136,7 +137,7 @@ export function getStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
     payloadRect,
     markerCenters,
     markerRects,
-    cells: createCellRects(normalizedSymbolCount, payloadRect)
+    cells: createCellRects(normalizedSymbolCount, payloadRect, PAYLOAD_GAP)
   };
 }
 
@@ -144,8 +145,34 @@ export function getStageMarkerTargetPoints(size = CANONICAL_STAGE_SIZE) {
   return getStageLayout(1, size).markerCenters;
 }
 
+export function getPlainStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
+  const normalizedSymbolCount = normalizeStageSymbolCount(symbolCount);
+  const payloadRect = {
+    x: scaleValue(PLAIN_PAYLOAD_INSET, size),
+    y: scaleValue(PLAIN_PAYLOAD_INSET, size),
+    width: size - (scaleValue(PLAIN_PAYLOAD_INSET, size) * 2),
+    height: size - (scaleValue(PLAIN_PAYLOAD_INSET, size) * 2)
+  };
+
+  return {
+    size,
+    symbolCount: normalizedSymbolCount,
+    payloadRect,
+    cells: createCellRects(normalizedSymbolCount, payloadRect, scaleValue(PLAIN_PAYLOAD_GAP, size))
+  };
+}
+
 function addPass(passes, seen, region) {
-  const key = [region.x, region.y, region.width, region.height, Number(Boolean(region.tryHarder)), Number(Boolean(region.tryInvert))].join(":");
+  const key = [
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+    Number(Boolean(region.tryHarder)),
+    Number(Boolean(region.tryInvert)),
+    Number(Boolean(region.tryDenoise)),
+    region.binarizer ?? ""
+  ].join(":");
   if (!seen.has(key)) {
     seen.add(key);
     passes.push(region);
@@ -241,6 +268,95 @@ export function buildGuidedDecodePasses(size, symbolCount = null) {
     });
   }
 
+  return passes;
+}
+
+export function buildPlainDecodePasses(size, symbolCount = null) {
+  const seen = new Set();
+  const passes = [];
+
+  addPass(passes, seen, {
+    x: 0,
+    y: 0,
+    width: size,
+    height: size,
+    tryHarder: false,
+    tryInvert: true,
+    tryDenoise: true,
+    binarizer: "LocalAverage"
+  });
+
+  const symbolCounts = symbolCount ? [normalizeStageSymbolCount(symbolCount)] : [1, 2, 4];
+  for (const count of symbolCounts) {
+    const layout = getPlainStageLayout(count, size);
+    for (const cell of layout.cells) {
+      const expanded = expandRegion(cell, size, 0.08);
+      addPass(passes, seen, {
+        ...expanded,
+        tryHarder: true,
+        tryInvert: true,
+        tryDenoise: true,
+        binarizer: "LocalAverage"
+      });
+    }
+
+    const payloadExpanded = expandRegion(layout.payloadRect, size, 0.03);
+    const halfWidth = Math.floor((payloadExpanded.width - 14) / 2);
+    const halfHeight = Math.floor((payloadExpanded.height - 14) / 2);
+    addPass(passes, seen, {
+      x: payloadExpanded.x,
+      y: payloadExpanded.y,
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x + payloadExpanded.width - Math.max(1, halfWidth),
+      y: payloadExpanded.y,
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x,
+      y: payloadExpanded.y + payloadExpanded.height - Math.max(1, halfHeight),
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+    addPass(passes, seen, {
+      x: payloadExpanded.x + payloadExpanded.width - Math.max(1, halfWidth),
+      y: payloadExpanded.y + payloadExpanded.height - Math.max(1, halfHeight),
+      width: Math.max(1, halfWidth),
+      height: Math.max(1, halfHeight),
+      tryHarder: true,
+      tryInvert: true,
+      tryDenoise: true,
+      binarizer: "GlobalHistogram"
+    });
+  }
+
+  return passes;
+}
+
+export function buildRectifiedDecodePasses(size, symbolCount = null) {
+  const seen = new Set();
+  const passes = [];
+  for (const pass of buildPlainDecodePasses(size, symbolCount)) {
+    addPass(passes, seen, pass);
+  }
+  for (const pass of buildGuidedDecodePasses(size, symbolCount)) {
+    addPass(passes, seen, pass);
+  }
   return passes;
 }
 

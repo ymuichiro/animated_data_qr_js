@@ -101,7 +101,7 @@ Important defaults:
 - `chunkByteSize`: `220`
 - `payloadEncoding`: `binary`
 - `symbolsPerFrame`: `1`
-- `stageStyle`: `guided`
+- `stageStyle`: `guided` (hybrid guide pulses plus larger plain payload frames)
 
 ### `TRANSFER_PRESETS`
 
@@ -171,7 +171,7 @@ The sender and receiver pages also include a help button that explains the opera
 Current demo flow:
 
 - the sender prepares the transfer automatically when you open the QR stage
-- the sender renders a guided stage frame by default so the receiver can lock onto known corner fiducials
+- the sender flashes guided calibration frames periodically, while most payload frames use a larger plain layout
 - the sender can choose a single file or a whole folder
 - folder selections are packed into an internal transfer archive before QR encoding
 - the receiver starts camera scanning as soon as you open the scan stage
@@ -213,8 +213,9 @@ This library already applies several of these improvements:
 - `binary` payload is the default
 - `symbolsPerFrame` supports multi-QR transfer
 - `parityBlockDataChunks` adds XOR parity recovery
-- the sender can render a guided stage with deterministic QR cell placement
+- the sender can render deterministic guided calibration frames and larger plain payload frames between them
 - the receiver uses ZXing/WASM for guided-stage rectified decode plus legacy full-frame fallback
+- the receiver keeps calibration locked across plain payload frames so the camera can stay tighter on the QR payload
 - the receiver can optimize supported camera tracks and uses a single in-flight scan loop
 - the sender rotates multi-QR placement across display frames and shifts chunk groupings across loops to avoid persistent blind spots and repeated weak pairings
 - the demo presets package these tradeoffs into simple choices

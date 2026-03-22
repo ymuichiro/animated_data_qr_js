@@ -270,6 +270,15 @@ function selectBestStage(candidates, totalPixels) {
       continue;
     }
 
+    const averageMarkerSize = set.reduce(
+      (sum, candidate) => sum + Math.max(candidate.width, candidate.height),
+      0
+    ) / set.length;
+    const markerToStageRatio = averageMarkerSize / Math.max(1, minSide);
+    if (markerToStageRatio < 0.08 || markerToStageRatio > 0.24) {
+      continue;
+    }
+
     const area = polygonArea(ordered);
     if (area < totalPixels * 0.07) {
       continue;

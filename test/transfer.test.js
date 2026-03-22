@@ -5,6 +5,7 @@ import {
   estimateTransferStats,
   parseFrame
 } from "../src/index.js";
+import { shouldRenderGuidedCalibrationFrame } from "../src/sender.js";
 
 function createFakeFile(name, type, bytes) {
   return {
@@ -145,5 +146,16 @@ describe("transfer flow", () => {
     expect(completed).not.toBeNull();
     const outputBytes = new Uint8Array(await completed.blob.arrayBuffer());
     expect(Array.from(outputBytes)).toEqual(Array.from(inputBytes));
+  });
+
+  it("renders guided calibration frames intermittently so plain frames can stay larger", () => {
+    const modes = Array.from({ length: 12 }, (_, index) => (
+      shouldRenderGuidedCalibrationFrame(index, 10, 2) ? "guided" : "plain"
+    ));
+
+    expect(modes.slice(0, 4)).toEqual(["guided", "guided", "plain", "plain"]);
+    expect(modes.filter((mode) => mode === "guided")).toHaveLength(4);
+    expect(modes[10]).toBe("guided");
+    expect(modes[11]).toBe("guided");
   });
 });
