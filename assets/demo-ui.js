@@ -696,7 +696,6 @@ export function initReceiverDemo({
     maxSymbolsPerFrame: 4,
     autoStopOnComplete: true,
     scanMaxDimension: 720,
-    guidedCalibration: true,
     cameraOptimization: true,
     cameraConstraints: {
       audio: false,
@@ -717,10 +716,6 @@ export function initReceiverDemo({
       }
     }
   });
-
-  function setCalibrationUi(text) {
-    setText("calibrationStatusBadge", text);
-  }
 
   function openScanDialog() {
     openDialog(scanDialog);
@@ -849,7 +844,6 @@ export function initReceiverDemo({
     setText("manifestMeta", "The file details will appear here once the first manifest is read.");
     setText("decoderModeText", "Decoder: preparing");
     setText("cameraStatusText", "Camera: preparing");
-    setCalibrationUi("Catch a guide frame to lock");
 
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
@@ -867,11 +861,10 @@ export function initReceiverDemo({
     setText("stageMeta", "Requesting camera access and preparing the scan stage...");
     setText("decoderModeText", "Decoder: preparing");
     setText("cameraStatusText", "Camera: requesting access");
-    setCalibrationUi("Catch a guide frame to lock");
     setStatus({
       tone: "working",
       title: "Starting camera",
-      detail: "Allow camera access, then align the sender stage inside the on-screen guide.",
+      detail: "Allow camera access, then point the camera at the sender QR screen.",
       legacy: "status: starting camera"
     });
 
@@ -976,7 +969,7 @@ export function initReceiverDemo({
 
   receiver.on("camera-start", () => {
     openScanDialog();
-    setText("stageMeta", "Camera is live. Catch one of the sender guide pulses to lock, then keep the QR large and steady.");
+    setText("stageMeta", "Camera is live. Keep the sender QR large, bright, and steady inside the frame.");
     syncButtons(true);
   });
 
@@ -996,7 +989,7 @@ export function initReceiverDemo({
     setStatus({
       tone: "live",
       title: "Scanning in progress",
-      detail: "Hold both devices steady while the calibration guide locks and the receiver collects frames.",
+      detail: "Hold both devices steady while the receiver collects QR frames.",
       legacy: "status: scanning"
     });
     syncButtons(true);
@@ -1008,22 +1001,6 @@ export function initReceiverDemo({
 
   receiver.on("decoder-mode", ({ mode }) => {
     setText("decoderModeText", formatDecoderMode(mode));
-  });
-
-  receiver.on("calibration-state", ({ state, detail }) => {
-    const message = detail || (
-      state === "locked"
-        ? "Calibration locked"
-        : state === "lost"
-          ? "Stage lost, realigning"
-          : "Catch a guide frame to lock"
-    );
-    setCalibrationUi(message);
-    if (state === "locked") {
-      setText("stageMeta", "Calibration locked. Keep the QR large and steady while the receiver refreshes the lock on later guide pulses.");
-    } else if (state === "lost") {
-      setText("stageMeta", "The lock was lost. Pull back briefly until a guide pulse is visible again, then continue scanning.");
-    }
   });
 
   receiver.on("camera-stop", () => {
@@ -1186,7 +1163,6 @@ export function initReceiverDemo({
   setText("stageMeta", "Open the scan stage to start the camera and watch live progress.");
   setText("decoderModeText", "Decoder: preparing");
   setText("cameraStatusText", "Camera: preparing");
-  setCalibrationUi("Catch a guide frame to lock");
   const progressText = byId("progressText");
   if (progressText) {
     progressText.textContent = "0%  |  No chunks received yet";

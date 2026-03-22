@@ -6,7 +6,6 @@ The Pages demo now supports:
 
 - single-file transfer
 - folder transfer with internal archive packing
-- guided sender-stage calibration in the receiver modal
 - extracted-folder save on supported browsers
 - ZIP fallback download for restored folders
 
