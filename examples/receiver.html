@@ -100,13 +100,6 @@
         <div class="video-card video-card--modal">
           <div class="video-frame video-frame--modal">
             <video id="video" autoplay muted playsinline></video>
-            <div class="calibration-overlay" aria-hidden="true">
-              <span class="calibration-corner calibration-corner--tl"></span>
-              <span class="calibration-corner calibration-corner--tr"></span>
-              <span class="calibration-corner calibration-corner--br"></span>
-              <span class="calibration-corner calibration-corner--bl"></span>
-              <div id="calibrationStatusBadge" class="calibration-badge">Catch a guide frame to lock</div>
-            </div>
           </div>
           <p id="stageMeta" class="video-caption">Open the scan stage to start the camera and watch live progress.</p>
         </div>
@@ -140,8 +133,7 @@
         <ol class="help-list">
           <li>Open the scan stage when the sender is ready.</li>
           <li>Allow camera access as soon as the scan stage opens.</li>
-          <li>Catch one of the sender guide pulses until the badge says the lock is ready.</li>
-          <li>After the lock is ready, let the QR fill more of the camera view so the payload stays large.</li>
+          <li>Keep the sender QR large enough in the frame that the code stays crisp and easy to focus.</li>
           <li>Watch the live progress in the modal until the main page shows the save or download action.</li>
           <li>Folder transfers can be saved directly as extracted files or downloaded as a standard ZIP fallback.</li>
         </ol>

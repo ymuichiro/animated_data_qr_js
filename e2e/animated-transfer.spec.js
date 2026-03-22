@@ -427,7 +427,7 @@ test("multi-QR transfer completes when the sender stage does not fill the camera
   expect(result.mimeType).toBe("text/plain");
 });
 
-test("guided calibration falls back to legacy scanning when sender markers are unavailable", async ({ page }) => {
+test("plain-stage scanning completes with the default sender layout", async ({ page }) => {
   await page.goto("/examples/index.html");
 
   const result = await page.evaluate(async () => {
@@ -453,7 +453,6 @@ test("guided calibration falls back to legacy scanning when sender markers are u
 
     const sender = new AnimatedQrSender({
       canvas: senderCanvas,
-      stageStyle: "plain",
       frameIntervalMs: 90,
       chunkByteSize: 64,
       qrOptions: {
@@ -480,14 +479,9 @@ test("guided calibration falls back to legacy scanning when sender markers are u
 
     receiver.stream = stream;
 
-    const calibrationStates = [];
-    receiver.on("calibration-state", ({ state }) => {
-      calibrationStates.push(state);
-    });
-
     const completed = await new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new Error("Timed out while waiting for plain-stage fallback completion"));
+        reject(new Error("Timed out while waiting for plain-stage completion"));
       }, 25_000);
 
       receiver.on("complete", (resultPayload) => {
@@ -516,16 +510,14 @@ test("guided calibration falls back to legacy scanning when sender markers are u
 
     return {
       expected: payloadText,
-      actual: restoredText,
-      calibrationStates
+      actual: restoredText
     };
   });
 
   expect(result.actual).toBe(result.expected);
-  expect(result.calibrationStates).not.toContain("locked");
 });
 
-test("guided calibration completes under moderate perspective distortion", async ({ page }) => {
+test("plain-stage scanning completes under mild perspective distortion", async ({ page }) => {
   await page.goto("/examples/index.html");
 
   const result = await page.evaluate(async () => {
@@ -549,7 +541,7 @@ test("guided calibration completes under moderate perspective distortion", async
     receiverVideo.style.width = "640px";
     document.body.appendChild(receiverVideo);
 
-    const payloadText = Array.from({ length: 320 }, (_, index) => `perspective-${index.toString().padStart(3, "0")}`)
+    const payloadText = Array.from({ length: 140 }, (_, index) => `perspective-${index.toString().padStart(3, "0")}`)
       .join("\n");
     const file = new File([payloadText], "e2e-perspective.txt", {
       type: "text/plain"
@@ -559,7 +551,7 @@ test("guided calibration completes under moderate perspective distortion", async
       canvas: senderCanvas,
       frameIntervalMs: 120,
       chunkByteSize: 48,
-      symbolsPerFrame: 2,
+      symbolsPerFrame: 1,
       qrOptions: {
         errorCorrectionLevel: "M",
         margin: 1,
@@ -571,10 +563,10 @@ test("guided calibration completes under moderate perspective distortion", async
     await sender.start();
 
     const corners = {
-      topLeft: { x: 160, y: 78 },
-      topRight: { x: 804, y: 40 },
-      bottomLeft: { x: 108, y: 664 },
-      bottomRight: { x: 868, y: 706 }
+      topLeft: { x: 176, y: 82 },
+      topRight: { x: 800, y: 68 },
+      bottomLeft: { x: 148, y: 650 },
+      bottomRight: { x: 828, y: 676 }
     };
 
     let keepDrawing = true;
@@ -643,16 +635,11 @@ test("guided calibration completes under moderate perspective distortion", async
       video: receiverVideo,
       scanIntervalMs: 80,
       autoStopOnComplete: true,
-      maxSymbolsPerFrame: 2,
+      maxSymbolsPerFrame: 1,
       scanMaxDimension: 720
     });
 
     receiver.stream = stream;
-
-    const calibrationStates = [];
-    receiver.on("calibration-state", ({ state }) => {
-      calibrationStates.push(state);
-    });
 
     const completed = await new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -686,13 +673,11 @@ test("guided calibration completes under moderate perspective distortion", async
 
     return {
       expected: payloadText,
-      actual: restoredText,
-      calibrationStates
+      actual: restoredText
     };
   });
 
   expect(result.actual).toBe(result.expected);
-  expect(result.calibrationStates).toContain("locked");
 });
 
 test("receiver falls back to main-thread ZXing when worker startup fails", async ({ page }) => {

@@ -80,8 +80,11 @@ export interface SenderOptions {
   payloadEncoding?: PayloadEncoding;
   symbolsPerFrame?: number;
   parityBlockDataChunks?: number;
+  /** @deprecated Accepted temporarily but ignored. The sender always renders the plain payload stage. */
   stageStyle?: "guided" | "plain";
+  /** @deprecated Accepted temporarily but ignored. */
   guidedCalibrationIntervalFrames?: number;
+  /** @deprecated Accepted temporarily but ignored. */
   guidedCalibrationBurstFrames?: number;
   qrOptions?: Record<string, unknown>;
 }
@@ -97,6 +100,7 @@ export interface ReceiverOptions {
   /** @deprecated Accepted temporarily but ignored. The decode passes are fixed internally. */
   tileScanGridSizes?: number[];
   decoderAssetBaseUrl?: string;
+  /** @deprecated Accepted temporarily but ignored. Guided calibration has been removed. */
   guidedCalibration?: boolean;
   cameraOptimization?: boolean;
   cameraConstraints?: MediaStreamConstraints;
@@ -259,7 +263,7 @@ export class AnimatedQrSender {
   payloadEncoding: PayloadEncoding;
   symbolsPerFrame: number;
   parityBlockDataChunks: number;
-  stageStyle: "guided" | "plain";
+  stageStyle: "plain";
   prepared: PreparedTransfer | null;
   frameIndex: number;
   running: boolean;

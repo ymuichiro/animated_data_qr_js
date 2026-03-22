@@ -101,7 +101,7 @@ Important defaults:
 - `chunkByteSize`: `220`
 - `payloadEncoding`: `binary`
 - `symbolsPerFrame`: `1`
-- `stageStyle`: `guided` (hybrid guide pulses plus larger plain payload frames)
+- `stageStyle`: `plain`
 
 ### `TRANSFER_PRESETS`
 
@@ -128,7 +128,7 @@ Notable options:
 
 - `scanMaxDimension`: caps the internal processing resolution used for decoding
 - `decoderAssetBaseUrl`: overrides where the receiver looks for `animated-data-qr.decoder.worker.js` and `zxing_reader.wasm`
-- `guidedCalibration`: enables sender-stage locking, perspective rectification, and fixed-cell decode
+- `guidedCalibration`: deprecated and ignored
 - `cameraOptimization`: applies supported camera constraints after `getUserMedia()`
 - `preferBarcodeDetector`: deprecated and ignored
 - `tileScanGridSizes`: deprecated and ignored
@@ -171,11 +171,10 @@ The sender and receiver pages also include a help button that explains the opera
 Current demo flow:
 
 - the sender prepares the transfer automatically when you open the QR stage
-- the sender flashes guided calibration frames periodically, while most payload frames use a larger plain layout
+- the sender always renders the larger plain payload layout
 - the sender can choose a single file or a whole folder
 - folder selections are packed into an internal transfer archive before QR encoding
 - the receiver starts camera scanning as soon as you open the scan stage
-- the receiver scan modal shows a calibration overlay and live calibration status
 - live receive progress stays inside the receiver modal while the main page remains compact
 - when a single file completes, the receiver modal closes automatically and the page highlights a clear download button
 - when a folder completes, the receiver extracts the internal archive in-browser and highlights either a direct folder-save action or a ZIP fallback
@@ -213,9 +212,8 @@ This library already applies several of these improvements:
 - `binary` payload is the default
 - `symbolsPerFrame` supports multi-QR transfer
 - `parityBlockDataChunks` adds XOR parity recovery
-- the sender can render deterministic guided calibration frames and larger plain payload frames between them
-- the receiver uses ZXing/WASM for guided-stage rectified decode plus legacy full-frame fallback
-- the receiver keeps calibration locked across plain payload frames so the camera can stay tighter on the QR payload
+- the sender renders a larger plain QR stage so more of the screen area is used for payload
+- the receiver uses ZXing/WASM with full-frame and tile fallback passes
 - the receiver can optimize supported camera tracks and uses a single in-flight scan loop
 - the sender rotates multi-QR placement across display frames and shifts chunk groupings across loops to avoid persistent blind spots and repeated weak pairings
 - the demo presets package these tradeoffs into simple choices

@@ -4,7 +4,6 @@ import { splitBytes } from "./utils/chunk.js";
 import { groupIntoBatches } from "./grid.js";
 import {
   DEFAULT_STAGE_STYLE,
-  drawGuidedStageFrame,
   getPlainStageLayout
 } from "./stage-layout.js";
 import {
@@ -23,9 +22,6 @@ import {
   DEFAULT_SYMBOLS_PER_FRAME,
   estimateTransferStats
 } from "./tuning.js";
-
-const DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES = 10;
-const DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES = 2;
 
 function toQrSymbol(frame) {
   if (typeof frame === "string") {
@@ -83,39 +79,6 @@ async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
   canvas.height = height;
   targetContext.clearRect(0, 0, width, height);
   targetContext.drawImage(frameCanvas, 0, 0, width, height);
-}
-
-async function renderGuidedQrGrid(canvas, qrSymbols, qrOptions) {
-  const { width } = getCanvasDisplaySize(canvas, qrSymbols.length);
-  const frameCanvas = document.createElement("canvas");
-  frameCanvas.width = width;
-  frameCanvas.height = width;
-  const context = frameCanvas.getContext("2d");
-  const layout = drawGuidedStageFrame(context, width, qrSymbols.length);
-
-  for (let index = 0; index < qrSymbols.length; index += 1) {
-    const cell = layout.cells[index];
-    if (!cell) {
-      break;
-    }
-
-    const tempCanvas = document.createElement("canvas");
-    const drawSize = Math.max(96, Math.min(cell.width, cell.height) - Math.round(Math.min(cell.width, cell.height) * 0.08));
-    await QRCode.toCanvas(tempCanvas, qrSymbols[index], {
-      ...qrOptions,
-      width: drawSize
-    });
-
-    const x = cell.x + Math.max(0, Math.floor((cell.width - drawSize) / 2));
-    const y = cell.y + Math.max(0, Math.floor((cell.height - drawSize) / 2));
-    context.drawImage(tempCanvas, x, y, drawSize, drawSize);
-  }
-
-  const targetContext = canvas.getContext("2d");
-  canvas.width = width;
-  canvas.height = width;
-  targetContext.clearRect(0, 0, width, width);
-  targetContext.drawImage(frameCanvas, 0, 0, width, width);
 }
 
 async function blobLikeToBytes(fileLike) {
@@ -227,29 +190,6 @@ function rotateFrameBatch(displayFrame, rotation) {
       ...displayFrame.qrSymbols.slice(0, offset)
     ]
   };
-}
-
-function normalizeFrameCount(value, fallback) {
-  if (!Number.isInteger(value) || value <= 0) {
-    return fallback;
-  }
-  return value;
-}
-
-export function shouldRenderGuidedCalibrationFrame(
-  renderCount,
-  intervalFrames = DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES,
-  burstFrames = DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES
-) {
-  const safeBurstFrames = Math.max(1, normalizeFrameCount(burstFrames, DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES));
-  const safeIntervalFrames = Math.max(
-    safeBurstFrames + 1,
-    normalizeFrameCount(intervalFrames, DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES)
-  );
-  if (!Number.isInteger(renderCount) || renderCount < 0) {
-    return true;
-  }
-  return (renderCount % safeIntervalFrames) < safeBurstFrames;
 }
 
 function getLoopDisplayFrame(prepared, displayFrameIndex, loopIndex = 0) {
@@ -404,20 +344,11 @@ export class AnimatedQrSender extends SimpleEmitter {
       scale: 6,
       ...(options.qrOptions ?? {})
     };
-    this.stageStyle = options.stageStyle ?? DEFAULT_STAGE_STYLE;
-    this.guidedCalibrationIntervalFrames = normalizeFrameCount(
-      options.guidedCalibrationIntervalFrames,
-      DEFAULT_GUIDED_CALIBRATION_INTERVAL_FRAMES
-    );
-    this.guidedCalibrationBurstFrames = normalizeFrameCount(
-      options.guidedCalibrationBurstFrames,
-      DEFAULT_GUIDED_CALIBRATION_BURST_FRAMES
-    );
+    this.stageStyle = DEFAULT_STAGE_STYLE;
 
     this.prepared = null;
     this.frameIndex = 0;
     this.loopIndex = 0;
-    this.renderCount = 0;
     this.running = false;
     this.timer = null;
   }
@@ -441,7 +372,6 @@ export class AnimatedQrSender extends SimpleEmitter {
     this.prepared = transfer;
     this.frameIndex = 0;
     this.loopIndex = 0;
-    this.renderCount = 0;
     this.emit("prepared", transfer);
     return transfer;
   }
@@ -465,24 +395,13 @@ export class AnimatedQrSender extends SimpleEmitter {
       safeIndex + this.loopIndex
     );
 
-    const renderGuidedStage = this.stageStyle !== "plain"
-      && shouldRenderGuidedCalibrationFrame(
-        this.renderCount,
-        this.guidedCalibrationIntervalFrames,
-        this.guidedCalibrationBurstFrames
-      );
-
-    if (renderGuidedStage) {
-      await renderGuidedQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
-    } else {
-      await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
-    }
+    await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
 
     this.emit("frame", {
       frameIndex: safeIndex,
       symbols: displayFrame.symbols,
       symbolCount: displayFrame.symbols.length,
-      stageMode: renderGuidedStage ? "guided" : "plain",
+      stageMode: "plain",
       sessionId: this.prepared.sessionId
     });
     return displayFrame.symbols;
@@ -520,7 +439,6 @@ export class AnimatedQrSender extends SimpleEmitter {
 
     try {
       await this.renderFrameAt(this.frameIndex);
-      this.renderCount += 1;
       this.frameIndex = (this.frameIndex + 1) % this.prepared.displayFrames.length;
       if (this.frameIndex === 0) {
         this.loopIndex += 1;
