@@ -173,7 +173,7 @@ test("folder transfer resolves as a folder result through the high-level API", a
 });
 
 test("sender demo mounts and broadcasts through createQrSender", async ({ page }) => {
-  await page.goto("/docs/sender/index.html");
+  await page.goto("/examples/sender.html");
   await page.locator("#fileInput").setInputFiles({
     name: "demo.txt",
     mimeType: "text/plain",
@@ -190,7 +190,7 @@ test("sender demo mounts and broadcasts through createQrSender", async ({ page }
 
 test("receiver demo mounts its managed video element and opens a full scan stage on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/docs/receiver/index.html");
+  await page.goto("/examples/receiver.html");
   await stubCanvasCamera(page);
 
   await page.getByRole("button", { name: "Open scan stage" }).click();
