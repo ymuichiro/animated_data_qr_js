@@ -1933,7 +1933,7 @@ var require_utils2 = __commonJS({
 var require_canvas = __commonJS({
   "node_modules/qrcode/lib/renderer/canvas.js"(exports) {
     var Utils = require_utils2();
-    function clearCanvas(ctx, canvas, size) {
+    function clearCanvas2(ctx, canvas, size) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (!canvas.style) canvas.style = {};
       canvas.height = size;
@@ -1963,7 +1963,7 @@ var require_canvas = __commonJS({
       const ctx = canvasEl.getContext("2d");
       const image = ctx.createImageData(size, size);
       Utils.qrToImageData(image.data, qrData, opts);
-      clearCanvas(ctx, canvasEl, size);
+      clearCanvas2(ctx, canvasEl, size);
       ctx.putImageData(image, 0, 0);
       return canvasEl;
     };
@@ -2110,6 +2110,9 @@ var require_browser = __commonJS({
   }
 });
 
+// src/sender.js
+var import_qrcode = __toESM(require_browser(), 1);
+
 // src/utils/base64.js
 function hasBuffer() {
   return typeof Buffer !== "undefined" && typeof Buffer.from === "function";
@@ -2160,6 +2163,168 @@ function base64UrlToBytes(base64UrlString) {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+// src/utils/chunk.js
+function splitBytes(bytes, chunkByteSize) {
+  if (!(bytes instanceof Uint8Array)) {
+    throw new TypeError("bytes must be Uint8Array");
+  }
+  if (!Number.isInteger(chunkByteSize) || chunkByteSize <= 0) {
+    throw new TypeError("chunkByteSize must be an integer > 0");
+  }
+  if (bytes.length === 0) {
+    return [new Uint8Array(0)];
+  }
+  const chunks = [];
+  for (let index = 0; index < bytes.length; index += chunkByteSize) {
+    chunks.push(bytes.slice(index, index + chunkByteSize));
+  }
+  return chunks;
+}
+function concatChunks(chunks, expectedSize = null) {
+  if (!Array.isArray(chunks)) {
+    throw new TypeError("chunks must be an array");
+  }
+  const totalSize = Number.isInteger(expectedSize) && expectedSize >= 0 ? expectedSize : chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const output = new Uint8Array(totalSize);
+  let offset = 0;
+  for (const chunk of chunks) {
+    if (!(chunk instanceof Uint8Array)) {
+      throw new TypeError("Each chunk must be Uint8Array");
+    }
+    if (offset >= output.length) {
+      break;
+    }
+    const writableLength = Math.min(chunk.length, output.length - offset);
+    output.set(chunk.subarray(0, writableLength), offset);
+    offset += writableLength;
+  }
+  return output;
+}
+
+// src/grid.js
+function getGridDimensions(symbolsPerFrame) {
+  if (!Number.isInteger(symbolsPerFrame) || symbolsPerFrame <= 0) {
+    throw new TypeError("symbolsPerFrame must be an integer > 0");
+  }
+  const columns = Math.ceil(Math.sqrt(symbolsPerFrame));
+  const rows = Math.ceil(symbolsPerFrame / columns);
+  return {
+    columns,
+    rows
+  };
+}
+function groupIntoBatches(items, batchSize) {
+  if (!Array.isArray(items)) {
+    throw new TypeError("items must be an array");
+  }
+  if (!Number.isInteger(batchSize) || batchSize <= 0) {
+    throw new TypeError("batchSize must be an integer > 0");
+  }
+  const batches = [];
+  for (let index = 0; index < items.length; index += batchSize) {
+    batches.push(items.slice(index, index + batchSize));
+  }
+  return batches;
+}
+
+// src/stage-layout.js
+var CANONICAL_STAGE_SIZE = 1e3;
+var PLAIN_PAYLOAD_INSET = 104;
+var PLAIN_PAYLOAD_GAP = 22;
+function scaleValue(value, size) {
+  return Math.round(value / CANONICAL_STAGE_SIZE * size);
+}
+function createCellRects(symbolCount, payloadRect, gap) {
+  if (symbolCount === 1) {
+    return [{ ...payloadRect }];
+  }
+  if (symbolCount === 2) {
+    const cellWidth2 = Math.floor((payloadRect.width - gap) / 2);
+    return [
+      {
+        x: payloadRect.x,
+        y: payloadRect.y,
+        width: cellWidth2,
+        height: payloadRect.height
+      },
+      {
+        x: payloadRect.x + payloadRect.width - cellWidth2,
+        y: payloadRect.y,
+        width: cellWidth2,
+        height: payloadRect.height
+      }
+    ];
+  }
+  if (symbolCount === 4) {
+    const cellWidth2 = Math.floor((payloadRect.width - gap) / 2);
+    const cellHeight2 = Math.floor((payloadRect.height - gap) / 2);
+    return [
+      { x: payloadRect.x, y: payloadRect.y, width: cellWidth2, height: cellHeight2 },
+      {
+        x: payloadRect.x + payloadRect.width - cellWidth2,
+        y: payloadRect.y,
+        width: cellWidth2,
+        height: cellHeight2
+      },
+      {
+        x: payloadRect.x,
+        y: payloadRect.y + payloadRect.height - cellHeight2,
+        width: cellWidth2,
+        height: cellHeight2
+      },
+      {
+        x: payloadRect.x + payloadRect.width - cellWidth2,
+        y: payloadRect.y + payloadRect.height - cellHeight2,
+        width: cellWidth2,
+        height: cellHeight2
+      }
+    ];
+  }
+  const { columns, rows } = getGridDimensions(symbolCount);
+  const cellWidth = Math.floor((payloadRect.width - gap * (columns - 1)) / columns);
+  const cellHeight = Math.floor((payloadRect.height - gap * (rows - 1)) / rows);
+  const rects = [];
+  for (let index = 0; index < symbolCount; index += 1) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    rects.push({
+      x: payloadRect.x + column * (cellWidth + gap),
+      y: payloadRect.y + row * (cellHeight + gap),
+      width: cellWidth,
+      height: cellHeight
+    });
+  }
+  return rects;
+}
+function normalizeStageSymbolCount(symbolCount) {
+  if (symbolCount === 1 || symbolCount === 2 || symbolCount === 4) {
+    return symbolCount;
+  }
+  if (!Number.isInteger(symbolCount) || symbolCount <= 1) {
+    return 1;
+  }
+  return symbolCount;
+}
+function getPlainStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
+  const normalizedSymbolCount = normalizeStageSymbolCount(symbolCount);
+  const payloadRect = {
+    x: scaleValue(PLAIN_PAYLOAD_INSET, size),
+    y: scaleValue(PLAIN_PAYLOAD_INSET, size),
+    width: size - scaleValue(PLAIN_PAYLOAD_INSET, size) * 2,
+    height: size - scaleValue(PLAIN_PAYLOAD_INSET, size) * 2
+  };
+  return {
+    size,
+    symbolCount: normalizedSymbolCount,
+    payloadRect,
+    cells: createCellRects(
+      normalizedSymbolCount,
+      payloadRect,
+      scaleValue(PLAIN_PAYLOAD_GAP, size)
+    )
+  };
 }
 
 // src/protocol.js
@@ -2532,171 +2697,6 @@ function parseFrame(frameInput) {
     return parseTextFrame(frameInput);
   }
   return parseBinaryFrame(frameInput);
-}
-
-// src/sender.js
-var import_qrcode = __toESM(require_browser(), 1);
-
-// src/utils/chunk.js
-function splitBytes(bytes, chunkByteSize) {
-  if (!(bytes instanceof Uint8Array)) {
-    throw new TypeError("bytes must be Uint8Array");
-  }
-  if (!Number.isInteger(chunkByteSize) || chunkByteSize <= 0) {
-    throw new TypeError("chunkByteSize must be an integer > 0");
-  }
-  if (bytes.length === 0) {
-    return [new Uint8Array(0)];
-  }
-  const chunks = [];
-  for (let index = 0; index < bytes.length; index += chunkByteSize) {
-    chunks.push(bytes.slice(index, index + chunkByteSize));
-  }
-  return chunks;
-}
-function concatChunks(chunks, expectedSize = null) {
-  if (!Array.isArray(chunks)) {
-    throw new TypeError("chunks must be an array");
-  }
-  const totalSize = Number.isInteger(expectedSize) && expectedSize >= 0 ? expectedSize : chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const output = new Uint8Array(totalSize);
-  let offset = 0;
-  for (const chunk of chunks) {
-    if (!(chunk instanceof Uint8Array)) {
-      throw new TypeError("Each chunk must be Uint8Array");
-    }
-    if (offset >= output.length) {
-      break;
-    }
-    const writableLength = Math.min(chunk.length, output.length - offset);
-    output.set(chunk.subarray(0, writableLength), offset);
-    offset += writableLength;
-  }
-  return output;
-}
-
-// src/grid.js
-function getGridDimensions(symbolsPerFrame) {
-  if (!Number.isInteger(symbolsPerFrame) || symbolsPerFrame <= 0) {
-    throw new TypeError("symbolsPerFrame must be an integer > 0");
-  }
-  const columns = Math.ceil(Math.sqrt(symbolsPerFrame));
-  const rows = Math.ceil(symbolsPerFrame / columns);
-  return {
-    columns,
-    rows
-  };
-}
-function groupIntoBatches(items, batchSize) {
-  if (!Array.isArray(items)) {
-    throw new TypeError("items must be an array");
-  }
-  if (!Number.isInteger(batchSize) || batchSize <= 0) {
-    throw new TypeError("batchSize must be an integer > 0");
-  }
-  const batches = [];
-  for (let index = 0; index < items.length; index += batchSize) {
-    batches.push(items.slice(index, index + batchSize));
-  }
-  return batches;
-}
-
-// src/stage-layout.js
-var CANONICAL_STAGE_SIZE = 1e3;
-var PLAIN_PAYLOAD_INSET = 104;
-var PLAIN_PAYLOAD_GAP = 22;
-function scaleValue(value, size) {
-  return Math.round(value / CANONICAL_STAGE_SIZE * size);
-}
-function createCellRects(symbolCount, payloadRect, gap) {
-  if (symbolCount === 1) {
-    return [{ ...payloadRect }];
-  }
-  if (symbolCount === 2) {
-    const cellWidth2 = Math.floor((payloadRect.width - gap) / 2);
-    return [
-      {
-        x: payloadRect.x,
-        y: payloadRect.y,
-        width: cellWidth2,
-        height: payloadRect.height
-      },
-      {
-        x: payloadRect.x + payloadRect.width - cellWidth2,
-        y: payloadRect.y,
-        width: cellWidth2,
-        height: payloadRect.height
-      }
-    ];
-  }
-  if (symbolCount === 4) {
-    const cellWidth2 = Math.floor((payloadRect.width - gap) / 2);
-    const cellHeight2 = Math.floor((payloadRect.height - gap) / 2);
-    return [
-      { x: payloadRect.x, y: payloadRect.y, width: cellWidth2, height: cellHeight2 },
-      {
-        x: payloadRect.x + payloadRect.width - cellWidth2,
-        y: payloadRect.y,
-        width: cellWidth2,
-        height: cellHeight2
-      },
-      {
-        x: payloadRect.x,
-        y: payloadRect.y + payloadRect.height - cellHeight2,
-        width: cellWidth2,
-        height: cellHeight2
-      },
-      {
-        x: payloadRect.x + payloadRect.width - cellWidth2,
-        y: payloadRect.y + payloadRect.height - cellHeight2,
-        width: cellWidth2,
-        height: cellHeight2
-      }
-    ];
-  }
-  const { columns, rows } = getGridDimensions(symbolCount);
-  const cellWidth = Math.floor((payloadRect.width - gap * (columns - 1)) / columns);
-  const cellHeight = Math.floor((payloadRect.height - gap * (rows - 1)) / rows);
-  const rects = [];
-  for (let index = 0; index < symbolCount; index += 1) {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    rects.push({
-      x: payloadRect.x + column * (cellWidth + gap),
-      y: payloadRect.y + row * (cellHeight + gap),
-      width: cellWidth,
-      height: cellHeight
-    });
-  }
-  return rects;
-}
-function normalizeStageSymbolCount(symbolCount) {
-  if (symbolCount === 1 || symbolCount === 2 || symbolCount === 4) {
-    return symbolCount;
-  }
-  if (!Number.isInteger(symbolCount) || symbolCount <= 1) {
-    return 1;
-  }
-  return symbolCount;
-}
-function getPlainStageLayout(symbolCount = 1, size = CANONICAL_STAGE_SIZE) {
-  const normalizedSymbolCount = normalizeStageSymbolCount(symbolCount);
-  const payloadRect = {
-    x: scaleValue(PLAIN_PAYLOAD_INSET, size),
-    y: scaleValue(PLAIN_PAYLOAD_INSET, size),
-    width: size - scaleValue(PLAIN_PAYLOAD_INSET, size) * 2,
-    height: size - scaleValue(PLAIN_PAYLOAD_INSET, size) * 2
-  };
-  return {
-    size,
-    symbolCount: normalizedSymbolCount,
-    payloadRect,
-    cells: createCellRects(
-      normalizedSymbolCount,
-      payloadRect,
-      scaleValue(PLAIN_PAYLOAD_GAP, size)
-    )
-  };
 }
 
 // src/emitter.js
@@ -7833,38 +7833,463 @@ async function isArchiveBlob(blobLike) {
   const bytes = new Uint8Array(await headerSlice.arrayBuffer());
   return readFixedAscii(bytes, 0, 5) === ARCHIVE_MAGIC;
 }
-function supportsDirectorySave() {
-  return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+
+// src/library.js
+var textEncoder3 = new TextEncoder();
+function ensureDocument() {
+  if (typeof document === "undefined" || typeof document.createElement !== "function") {
+    throw new Error("This API requires a browser-like DOM environment.");
+  }
+}
+function isDomTarget(target) {
+  return Boolean(target) && typeof target.appendChild === "function" && typeof target.removeChild === "function";
+}
+function assertTarget(target, label = "target") {
+  if (!isDomTarget(target)) {
+    throw new TypeError(`${label} must be a DOM element container.`);
+  }
+}
+function createAbortLikeError(message) {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+function safeMimeType(value, fallback) {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+function safeFileName(value, fallback) {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+function createNamedBlobLike(blob, fileName, mimeType) {
+  const resolvedType = safeMimeType(mimeType, (blob == null ? void 0 : blob.type) || "application/octet-stream");
+  const resolvedName = safeFileName(fileName, (blob == null ? void 0 : blob.name) || "transfer.bin");
+  if (typeof File !== "undefined") {
+    return new File([blob], resolvedName, {
+      type: resolvedType
+    });
+  }
+  return {
+    name: resolvedName,
+    type: resolvedType,
+    async arrayBuffer() {
+      return blob.arrayBuffer();
+    }
+  };
+}
+function createPreparedSummary(prepared, inputKind, extras = {}) {
+  return {
+    inputKind,
+    sessionId: prepared.sessionId,
+    fileName: prepared.fileName,
+    mimeType: prepared.mimeType,
+    size: prepared.fileSize,
+    totalChunks: prepared.totalChunks,
+    totalFrames: prepared.displayFrames.length,
+    symbolsPerFrame: prepared.symbolsPerFrame,
+    parityBlockDataChunks: prepared.parityBlockDataChunks,
+    estimatedStats: prepared.estimatedStats,
+    ...extras
+  };
+}
+function clearCanvas(canvas) {
+  if (!canvas || typeof canvas.getContext !== "function") {
+    return;
+  }
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  context.clearRect(0, 0, canvas.width || 0, canvas.height || 0);
+}
+function createManagedCanvas(target) {
+  ensureDocument();
+  const canvas = document.createElement("canvas");
+  canvas.className = "animated-data-qr-canvas";
+  canvas.style.width = "100%";
+  canvas.style.display = "block";
+  target.appendChild(canvas);
+  return canvas;
+}
+function createManagedVideo(target) {
+  ensureDocument();
+  const video = document.createElement("video");
+  video.className = "animated-data-qr-video";
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "true");
+  video.style.width = "100%";
+  video.style.display = "block";
+  target.appendChild(video);
+  return video;
+}
+function createManagedScanCanvas() {
+  ensureDocument();
+  return document.createElement("canvas");
+}
+function normalizeTransferInputFromBytes(bytes, options = {}) {
+  if (!(bytes instanceof Uint8Array)) {
+    throw new TypeError("bytes must be a Uint8Array.");
+  }
+  const mimeType = safeMimeType(options.mimeType, "application/octet-stream");
+  const fileName = safeFileName(options.fileName, "transfer.bin");
+  return createNamedBlobLike(new Blob([bytes], { type: mimeType }), fileName, mimeType);
+}
+function normalizeTransferInputFromText(text, options = {}) {
+  if (typeof text !== "string") {
+    throw new TypeError("text must be a string.");
+  }
+  const mimeType = safeMimeType(options.mimeType, "text/plain;charset=utf-8");
+  const fileName = safeFileName(options.fileName, "message.txt");
+  return createNamedBlobLike(new Blob([textEncoder3.encode(text)], { type: mimeType }), fileName, mimeType);
+}
+function normalizeTransferInputFromBlob(blob, options = {}) {
+  if (!blob || typeof blob.arrayBuffer !== "function") {
+    throw new TypeError("blob must be a Blob, File, or blob-like object.");
+  }
+  const mimeType = safeMimeType(options.mimeType, blob.type || "application/octet-stream");
+  const fileName = safeFileName(options.fileName, blob.name || "transfer.bin");
+  return createNamedBlobLike(blob, fileName, mimeType);
+}
+function createSenderState(target, canvas) {
+  return {
+    status: "idle",
+    target,
+    elements: {
+      canvas
+    },
+    prepared: null,
+    inputKind: null,
+    running: false
+  };
+}
+function createReceiverState(target, video, scanCanvas) {
+  return {
+    status: "idle",
+    target,
+    elements: {
+      video,
+      scanCanvas
+    },
+    manifest: null,
+    progress: null,
+    diagnostics: null,
+    result: null,
+    error: null,
+    scanning: false,
+    decoderMode: null,
+    camera: null
+  };
+}
+function createQrSender(target, options = {}) {
+  assertTarget(target);
+  const canvas = createManagedCanvas(target);
+  const sender = new AnimatedQrSender({
+    ...options,
+    canvas
+  });
+  const state = createSenderState(target, canvas);
+  let destroyed = false;
+  function assertActive() {
+    if (destroyed) {
+      throw new Error("This sender controller has been destroyed.");
+    }
+  }
+  async function prepareInput(inputKind, blobLike, transferOptions = {}, extraSummary = {}) {
+    assertActive();
+    const prepared = await sender.prepare(blobLike, { ...options, ...transferOptions });
+    state.status = "prepared";
+    state.inputKind = inputKind;
+    state.prepared = createPreparedSummary(prepared, inputKind, extraSummary);
+    state.running = false;
+    await sender.renderFrameAt(0);
+    return state.prepared;
+  }
+  return {
+    async loadText(text, loadOptions = {}) {
+      const blobLike = normalizeTransferInputFromText(text, loadOptions);
+      return prepareInput("text", blobLike, loadOptions);
+    },
+    async loadBytes(bytes, loadOptions = {}) {
+      const blobLike = normalizeTransferInputFromBytes(bytes, loadOptions);
+      return prepareInput("bytes", blobLike, loadOptions);
+    },
+    async loadBlob(blob, loadOptions = {}) {
+      const blobLike = normalizeTransferInputFromBlob(blob, loadOptions);
+      return prepareInput("blob", blobLike, loadOptions);
+    },
+    async loadFolder(inputs, loadOptions = {}) {
+      assertActive();
+      if (!inputs || typeof inputs.length !== "number") {
+        throw new TypeError("inputs must be an ArrayLike<File>.");
+      }
+      const archive = await createArchive(inputs, loadOptions);
+      const blobLike = createNamedBlobLike(archive.blob, archive.fileName, archive.blob.type);
+      return prepareInput("folder", blobLike, loadOptions, {
+        archive: archive.manifestPreview
+      });
+    },
+    async start() {
+      assertActive();
+      if (!state.prepared) {
+        throw new Error("No transfer is prepared. Call a load*() method first.");
+      }
+      await sender.start();
+      state.status = "running";
+      state.running = true;
+    },
+    stop() {
+      assertActive();
+      sender.stop();
+      state.running = false;
+      state.status = state.prepared ? "prepared" : "idle";
+    },
+    clear() {
+      assertActive();
+      sender.stop();
+      sender.prepared = null;
+      sender.frameIndex = 0;
+      sender.loopIndex = 0;
+      state.status = "idle";
+      state.prepared = null;
+      state.inputKind = null;
+      state.running = false;
+      clearCanvas(canvas);
+    },
+    destroy() {
+      if (destroyed) {
+        return;
+      }
+      this.clear();
+      if (canvas.parentNode === target) {
+        target.removeChild(canvas);
+      }
+      state.status = "destroyed";
+      destroyed = true;
+    },
+    getState() {
+      return {
+        ...state,
+        elements: { ...state.elements },
+        prepared: state.prepared ? { ...state.prepared } : null
+      };
+    }
+  };
+}
+function createQrReceiver(target, options = {}) {
+  assertTarget(target);
+  const video = createManagedVideo(target);
+  const scanCanvas = createManagedScanCanvas();
+  const receiver = new AnimatedQrReceiver({
+    ...options,
+    video,
+    scanCanvas
+  });
+  const state = createReceiverState(target, video, scanCanvas);
+  let destroyed = false;
+  let activePromise = null;
+  let activeResolve = null;
+  let activeReject = null;
+  function assertActive() {
+    if (destroyed) {
+      throw new Error("This receiver controller has been destroyed.");
+    }
+  }
+  function settlePending(error, result) {
+    if (!activePromise) {
+      return;
+    }
+    const resolve = activeResolve;
+    const reject = activeReject;
+    activePromise = null;
+    activeResolve = null;
+    activeReject = null;
+    if (error) {
+      reject == null ? void 0 : reject(error);
+      return;
+    }
+    resolve == null ? void 0 : resolve(result);
+  }
+  async function resolveReceiveResult(result) {
+    if (await isArchiveBlob(result.blob)) {
+      const extracted = await extractArchive(result.blob);
+      return {
+        kind: "folder",
+        sessionId: result.sessionId,
+        archiveBlob: result.blob,
+        archiveFileName: result.fileName,
+        extracted,
+        totalChunks: result.totalChunks,
+        receivedChunks: result.receivedChunks
+      };
+    }
+    return {
+      kind: "file",
+      sessionId: result.sessionId,
+      blob: result.blob,
+      fileName: result.fileName,
+      mimeType: result.mimeType,
+      size: result.size,
+      totalChunks: result.totalChunks,
+      receivedChunks: result.receivedChunks
+    };
+  }
+  receiver.on("manifest", (payload) => {
+    var _a2;
+    state.manifest = payload;
+    (_a2 = options.onManifest) == null ? void 0 : _a2.call(options, payload);
+  });
+  receiver.on("progress", (payload) => {
+    var _a2;
+    state.progress = payload;
+    (_a2 = options.onProgress) == null ? void 0 : _a2.call(options, payload);
+  });
+  receiver.on("diagnostics", (payload) => {
+    var _a2;
+    state.diagnostics = payload;
+    (_a2 = options.onDiagnostics) == null ? void 0 : _a2.call(options, payload);
+  });
+  receiver.on("decoder-mode", (payload) => {
+    state.decoderMode = payload;
+  });
+  receiver.on("camera-start", (payload) => {
+    var _a2;
+    state.camera = payload;
+    (_a2 = options.onCameraStart) == null ? void 0 : _a2.call(options, payload);
+  });
+  receiver.on("camera-stop", (payload) => {
+    var _a2;
+    (_a2 = options.onCameraStop) == null ? void 0 : _a2.call(options, payload);
+  });
+  receiver.on("camera-tuned", (payload) => {
+    state.camera = {
+      ...state.camera || {},
+      tuning: payload
+    };
+  });
+  receiver.on("scan-start", () => {
+    state.status = "scanning";
+    state.scanning = true;
+  });
+  receiver.on("scan-stop", () => {
+    if (state.status !== "completed" && state.status !== "error") {
+      state.status = "stopped";
+    }
+    state.scanning = false;
+  });
+  receiver.on("error", ({ error }) => {
+    var _a2;
+    state.error = error;
+    state.status = "error";
+    state.scanning = false;
+    (_a2 = options.onError) == null ? void 0 : _a2.call(options, error);
+    settlePending(error instanceof Error ? error : new Error(String(error)));
+  });
+  receiver.on("complete", (payload) => {
+    void (async () => {
+      var _a2;
+      try {
+        const result = await resolveReceiveResult(payload);
+        state.result = result;
+        state.status = "completed";
+        state.scanning = false;
+        settlePending(null, result);
+      } catch (error) {
+        const normalized = error instanceof Error ? error : new Error(String(error));
+        state.error = normalized;
+        state.status = "error";
+        state.scanning = false;
+        (_a2 = options.onError) == null ? void 0 : _a2.call(options, normalized);
+        settlePending(normalized);
+      }
+    })();
+  });
+  return {
+    async start() {
+      assertActive();
+      if (activePromise) {
+        return activePromise;
+      }
+      receiver.reset();
+      state.status = "starting";
+      state.manifest = null;
+      state.progress = null;
+      state.diagnostics = null;
+      state.result = null;
+      state.error = null;
+      activePromise = new Promise((resolve, reject) => {
+        activeResolve = resolve;
+        activeReject = reject;
+      });
+      try {
+        await receiver.start();
+      } catch (error) {
+        const normalized = error instanceof Error ? error : new Error(String(error));
+        state.error = normalized;
+        state.status = "error";
+        settlePending(normalized);
+      }
+      return activePromise;
+    },
+    stop() {
+      assertActive();
+      receiver.stop();
+      receiver.stopCamera();
+      state.scanning = false;
+      if (state.status !== "completed") {
+        state.status = "stopped";
+      }
+      settlePending(createAbortLikeError("Receive stopped before completion."));
+    },
+    reset() {
+      assertActive();
+      receiver.stop();
+      receiver.stopCamera();
+      receiver.reset();
+      state.status = "idle";
+      state.manifest = null;
+      state.progress = null;
+      state.diagnostics = null;
+      state.result = null;
+      state.error = null;
+      state.scanning = false;
+      settlePending(createAbortLikeError("Receive reset before completion."));
+    },
+    destroy() {
+      if (destroyed) {
+        return;
+      }
+      this.reset();
+      if (video.parentNode === target) {
+        target.removeChild(video);
+      }
+      state.status = "destroyed";
+      destroyed = true;
+    },
+    getState() {
+      var _a2;
+      return {
+        ...state,
+        elements: { ...state.elements },
+        manifest: state.manifest ? { ...state.manifest } : null,
+        progress: state.progress ? { ...state.progress } : null,
+        diagnostics: state.diagnostics ? { ...state.diagnostics } : null,
+        result: state.result ? { ...state.result } : null,
+        camera: state.camera ? { ...state.camera } : null,
+        error: (_a2 = state.error) != null ? _a2 : null
+      };
+    }
+  };
 }
 export {
-  ARCHIVE_EXTENSION,
-  ARCHIVE_MAGIC,
-  ARCHIVE_MIME_TYPE,
-  ARCHIVE_VERSION,
-  AnimatedQrReceiver,
-  AnimatedQrSender,
-  DEFAULT_CHUNK_BYTE_SIZE,
-  DEFAULT_FRAME_INTERVAL_MS,
-  DEFAULT_PAYLOAD_ENCODING,
-  DEFAULT_SYMBOLS_PER_FRAME,
-  PROTOCOL_MAGIC,
-  TRANSFER_PRESETS,
   createArchive,
   createArchiveZipBlob,
   createDownloadLink,
-  createSessionId,
-  createTransferFrames,
-  encodeChunkFrame,
-  encodeChunkFrameBinary,
-  encodeManifestFrame,
-  encodeParityFrame,
-  encodeParityFrameBinary,
+  createQrReceiver,
+  createQrSender,
   estimateTransferStats,
   extractArchive,
-  isArchiveBlob,
-  parseFrame,
   resolveTransferPreset,
-  saveExtractedArchiveToDirectory,
-  supportsDirectorySave
+  saveExtractedArchiveToDirectory
 };
 //# sourceMappingURL=animated-data-qr.esm.js.map

@@ -241,8 +241,7 @@ function renderSenderEstimate({ selection, presetName, preset, estimateTransferS
 }
 
 export function initSenderDemo({
-  AnimatedQrSender,
-  createArchive,
+  createQrSender,
   resolveTransferPreset,
   estimateTransferStats
 }) {
@@ -254,25 +253,27 @@ export function initSenderDemo({
   const pickFolderBtn = byId("pickFolderBtn");
   const presetSelect = byId("presetSelect");
   const openStageBtn = byId("openStageBtn");
-  const canvas = byId("qrCanvas");
+  const stageMount = byId("qrStageMount");
   const stageDialog = byId("stageDialog");
   const stageCloseBtn = byId("stageCloseBtn");
   const modalStartBtn = byId("modalStartBtn");
   const modalStopBtn = byId("modalStopBtn");
 
-  const sender = new AnimatedQrSender({
-    canvas,
+  const sender = createQrSender(stageMount, {
     qrOptions: {
       margin: 1,
       scale: 6
     }
   });
+  const senderCanvas = sender.getState().elements.canvas;
+  if (senderCanvas) {
+    senderCanvas.id = "qrCanvas";
+  }
 
   const state = {
     selection: null,
-    archivePreview: null,
     preparing: false,
-    prepared: false,
+    preparedSummary: null,
     running: false
   };
 
@@ -317,16 +318,13 @@ export function initSenderDemo({
 
   function openStageDialog() {
     openDialog(stageDialog);
-    if (state.prepared) {
-      requestAnimationFrame(() => {
-        void sender.renderFrameAt(state.running ? sender.frameIndex : 0).catch(() => {});
-      });
-    }
   }
 
   function closeStageDialog() {
     if (state.running) {
       sender.stop();
+      state.running = false;
+      syncButtonState();
     }
     closeDialog(stageDialog);
   }
@@ -351,23 +349,26 @@ export function initSenderDemo({
     }
   }
 
-  function markNeedsPrepare(reason = "Choose a file or folder and open the QR stage.") {
+  function clearPreparedState() {
+    sender.clear();
+    state.preparedSummary = null;
+    state.running = false;
     state.preparing = false;
-    state.prepared = false;
-    state.archivePreview = null;
+  }
+
+  function markNeedsPrepare(reason = "Choose a file or folder and open the QR stage.") {
+    clearPreparedState();
     setText("stageMeta", state.selection
       ? "Open the QR stage to prepare the transfer and preview the sender screen."
       : "Choose a file or folder, then open the QR stage when you are ready.");
-    if (!state.running) {
-      const tone = state.selection ? "warning" : "idle";
-      const title = state.selection ? "Ready to open the stage" : "Select a file or folder";
-      setStatus({
-        tone,
-        title,
-        detail: reason,
-        legacy: `status: ${title.toLowerCase()} - ${reason}`
-      });
-    }
+    const tone = state.selection ? "warning" : "idle";
+    const title = state.selection ? "Ready to open the stage" : "Select a file or folder";
+    setStatus({
+      tone,
+      title,
+      detail: reason,
+      legacy: `status: ${title.toLowerCase()} - ${reason}`
+    });
     syncButtonState();
   }
 
@@ -398,17 +399,11 @@ export function initSenderDemo({
 
     if (state.running) {
       sender.stop();
+      state.running = false;
     }
 
-    sender.chunkByteSize = preset.chunkByteSize;
-    sender.frameIntervalMs = preset.frameIntervalMs;
-    sender.payloadEncoding = preset.payloadEncoding;
-    sender.symbolsPerFrame = preset.symbolsPerFrame;
-    sender.parityBlockDataChunks = preset.parityBlockDataChunks;
-    sender.qrOptions.errorCorrectionLevel = preset.qrOptions.errorCorrectionLevel;
-
     state.preparing = true;
-    state.prepared = false;
+    state.preparedSummary = null;
     syncButtonState();
 
     if (openStageAfter) {
@@ -424,7 +419,7 @@ export function initSenderDemo({
     });
 
     try {
-      let transferInput = state.selection.kind === "file" ? state.selection.file : null;
+      let summary;
       if (state.selection.kind === "folder") {
         setText("stageMeta", "Packing the selected folder into a secure transfer archive...");
         setStatus({
@@ -433,8 +428,13 @@ export function initSenderDemo({
           detail: "Reading files, grouping related content, and compressing the internal transfer archive.",
           legacy: "status: packing folder"
         });
-        const archive = await createArchive(state.selection.files, {
+        summary = await sender.loadFolder(state.selection.files, {
           rootName: state.selection.rootName,
+          chunkByteSize: preset.chunkByteSize,
+          payloadEncoding: preset.payloadEncoding,
+          symbolsPerFrame: preset.symbolsPerFrame,
+          parityBlockDataChunks: preset.parityBlockDataChunks,
+          frameIntervalMs: preset.frameIntervalMs,
           onProgress: (event) => {
             const detail = event.currentFile
               ? `${event.phase}: ${event.currentFile}`
@@ -442,21 +442,39 @@ export function initSenderDemo({
             setText("stageMeta", `Preparing folder transfer  |  ${detail}`);
           }
         });
-        state.archivePreview = archive.manifestPreview;
-        transferInput = new File([archive.blob], archive.fileName, {
-          type: archive.blob.type
+      } else {
+        summary = await sender.loadBlob(state.selection.file, {
+          chunkByteSize: preset.chunkByteSize,
+          payloadEncoding: preset.payloadEncoding,
+          symbolsPerFrame: preset.symbolsPerFrame,
+          parityBlockDataChunks: preset.parityBlockDataChunks,
+          frameIntervalMs: preset.frameIntervalMs
         });
       }
 
-      await sender.prepare(transferInput, {
-        chunkByteSize: preset.chunkByteSize,
-        payloadEncoding: preset.payloadEncoding,
-        symbolsPerFrame: preset.symbolsPerFrame,
-        parityBlockDataChunks: preset.parityBlockDataChunks,
-        frameIntervalMs: preset.frameIntervalMs
+      state.preparedSummary = summary;
+      state.preparing = false;
+      state.running = false;
+      setText("stageMeta", `Prepared ${summary.totalFrames} display frames for ${summary.fileName}`);
+      setText("estimateHeadline", `Expected loop time: ${formatDuration(summary.estimatedStats.loopDurationMs)}`);
+      if (summary.inputKind === "folder" && summary.archive) {
+        setText(
+          "estimateDetail",
+          `${summary.archive.rootName} folder  |  ${summary.archive.fileCount} files  |  ${formatBytes(summary.size)} packed archive  |  ${summary.totalChunks} chunks`
+        );
+      } else {
+        setText("estimateDetail", `${summary.fileName}  |  ${formatBytes(summary.size)}  |  ${summary.totalChunks} chunks`);
+      }
+      setStatus({
+        tone: "ready",
+        title: "Transfer prepared",
+        detail: "The QR stage is ready. Start the broadcast when the receiver is already scanning.",
+        legacy: `prepared: ${summary.fileName}`
       });
+      syncButtonState();
       return true;
     } catch (error) {
+      state.preparing = false;
       setStatus({
         tone: "error",
         title: "Preparation failed",
@@ -464,90 +482,65 @@ export function initSenderDemo({
         legacy: `error: ${error?.message || String(error)}`
       });
       setText("stageMeta", "Preparation failed. Choose another file or preset and try again.");
+      syncButtonState();
       return false;
-    } finally {
-      state.preparing = false;
+    }
+  }
+
+  async function startBroadcast() {
+    if (!state.preparedSummary) {
+      const prepared = await prepareTransfer({ openStageAfter: true });
+      if (!prepared) {
+        return;
+      }
+    }
+
+    try {
+      await sender.start();
+      state.running = true;
+      const summary = state.preparedSummary;
+      openStageDialog();
+      setText("stageMeta", `Broadcasting ${summary.totalFrames} display frames  |  ${summary.symbolsPerFrame} QR ${summary.symbolsPerFrame === 1 ? "symbol" : "symbols"} per frame`);
+      setStatus({
+        tone: "live",
+        title: "Broadcast running",
+        detail: "Keep the sender bright, steady, and fully visible to the camera.",
+        legacy: "status: broadcasting"
+      });
+      syncButtonState();
+    } catch (error) {
+      state.running = false;
+      setStatus({
+        tone: "error",
+        title: "Could not start",
+        detail: error?.message || String(error),
+        legacy: `error: ${error?.message || String(error)}`
+      });
       syncButtonState();
     }
   }
 
-  sender.on("prepared", (payload) => {
-    state.preparing = false;
-    state.prepared = true;
-    state.running = false;
-    setText("stageMeta", `Prepared ${payload.displayFrames.length} display frames for ${payload.fileName}`);
-    setText("estimateHeadline", `Expected loop time: ${formatDuration(payload.estimatedStats.loopDurationMs)}`);
-    if (state.selection?.kind === "folder" && state.archivePreview) {
-      setText(
-        "estimateDetail",
-        `${state.archivePreview.rootName} folder  |  ${state.archivePreview.fileCount} files  |  ${formatBytes(payload.fileSize)} packed archive  |  ${payload.totalChunks} chunks`
-      );
-    } else {
-      setText("estimateDetail", `${payload.fileName}  |  ${formatBytes(payload.fileSize)}  |  ${payload.totalChunks} chunks`);
-    }
-    setStatus({
-      tone: "ready",
-      title: "Transfer prepared",
-      detail: "The QR stage is ready. Start the broadcast when the receiver is already scanning.",
-      legacy: `prepared: ${payload.fileName}`
-    });
-    void sender.renderFrameAt(0).catch(() => {});
-    syncButtonState();
-  });
-
-  sender.on("start", ({ frameCount }) => {
-    state.running = true;
-    openStageDialog();
-    setText("stageMeta", `Broadcasting across ${frameCount} display frames`);
-    setStatus({
-      tone: "live",
-      title: "Broadcast running",
-      detail: "Keep the sender bright, steady, and fully visible to the camera.",
-      legacy: "status: broadcasting"
-    });
-    syncButtonState();
-  });
-
-  sender.on("frame", ({ frameIndex, symbolCount }) => {
-    setText("stageMeta", `Live frame ${frameIndex + 1}  |  ${symbolCount} QR ${symbolCount === 1 ? "symbol" : "symbols"} visible`);
-  });
-
-  sender.on("stop", () => {
+  function stopBroadcast() {
+    sender.stop();
     state.running = false;
     setStatus({
-      tone: state.prepared ? "ready" : "idle",
-      title: state.prepared ? "Broadcast stopped" : "Select a file or folder",
-      detail: state.prepared
+      tone: state.preparedSummary ? "ready" : "idle",
+      title: state.preparedSummary ? "Broadcast stopped" : "Select a file or folder",
+      detail: state.preparedSummary
         ? "You can start again immediately or prepare a different file."
         : "Choose a file or folder and open the QR stage.",
       legacy: "status: stopped"
     });
     syncButtonState();
-  });
-
-  sender.on("error", ({ error }) => {
-    state.preparing = false;
-    state.running = false;
-    setStatus({
-      tone: "error",
-      title: "Sender error",
-      detail: error?.message || String(error),
-      legacy: `error: ${error?.message || String(error)}`
-    });
-    syncButtonState();
-  });
+  }
 
   fileInput?.addEventListener("change", () => {
-    if (state.running) {
-      sender.stop();
-    }
     if (folderInput) {
       folderInput.value = "";
     }
-    const file = fileInput.files?.[0] || null;
-    state.selection = file ? {
+    state.selection = fileInput.files?.[0] ? {
       kind: "file",
-      file
+      file: fileInput.files[0]
     } : null;
     renderSelection();
     renderSelectedPreset();
@@ -559,9 +552,6 @@ export function initSenderDemo({
   });
 
   folderInput?.addEventListener("change", () => {
-    if (state.running) {
-      sender.stop();
-    }
     if (fileInput) {
       fileInput.value = "";
     }
@@ -577,39 +567,12 @@ export function initSenderDemo({
 
   presetSelect?.addEventListener("change", () => {
     renderSelectedPreset();
-    if (state.running) {
-      sender.stop();
-    }
     markNeedsPrepare(
       state.selection
         ? "Preset updated. Open the QR stage again to apply the new transfer profile."
         : "Choose a file or folder to see the preset estimate."
     );
   });
-
-  async function startBroadcast() {
-    if (!state.prepared) {
-      const prepared = await prepareTransfer({ openStageAfter: true });
-      if (!prepared) {
-        return;
-      }
-    }
-
-    try {
-      await sender.start();
-    } catch (error) {
-      setStatus({
-        tone: "error",
-        title: "Could not start",
-        detail: error?.message || String(error),
-        legacy: `error: ${error?.message || String(error)}`
-      });
-    }
-  }
-
-  function stopBroadcast() {
-    sender.stop();
-  }
 
   openStageBtn?.addEventListener("click", async () => {
     if (!state.selection) {
@@ -622,7 +585,7 @@ export function initSenderDemo({
       return;
     }
 
-    if (!state.prepared) {
+    if (!state.preparedSummary) {
       await prepareTransfer({ openStageAfter: true });
       return;
     }
@@ -630,8 +593,8 @@ export function initSenderDemo({
     openStageDialog();
   });
 
-  modalStartBtn?.addEventListener("click", async () => {
-    await startBroadcast();
+  modalStartBtn?.addEventListener("click", () => {
+    void startBroadcast();
   });
 
   modalStopBtn?.addEventListener("click", () => {
@@ -674,17 +637,14 @@ export function initSenderDemo({
 }
 
 export function initReceiverDemo({
-  AnimatedQrReceiver,
+  createQrReceiver,
   createArchiveZipBlob,
   createDownloadLink,
-  extractArchive,
-  isArchiveBlob,
-  saveExtractedArchiveToDirectory,
-  supportsDirectorySave
+  saveExtractedArchiveToDirectory
 }) {
   initDemoShell();
 
-  const video = byId("video");
+  const receiverMount = byId("videoMount");
   const openScanStageBtn = byId("openScanStageBtn");
   const startBtn = byId("startBtn");
   const stopBtn = byId("stopBtn");
@@ -694,11 +654,12 @@ export function initReceiverDemo({
   const download = byId("download");
   const saveFolderBtn = byId("saveFolderBtn");
   const downloadZipBtn = byId("downloadZipBtn");
+  const supportsDirectorySave = () => typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
   let downloadUrl = null;
   let extractedArchive = null;
+  let activeRunId = 0;
 
-  const receiver = new AnimatedQrReceiver({
-    video,
+  const receiver = createQrReceiver(receiverMount, {
     scanIntervalMs: 45,
     maxSymbolsPerFrame: 4,
     autoStopOnComplete: true,
@@ -721,22 +682,89 @@ export function initReceiverDemo({
           max: 30
         }
       }
+    },
+    onManifest(payload) {
+      setText("manifestName", payload.fileName);
+      setText(
+        "manifestMeta",
+        `${formatBytes(payload.fileSize)}  |  ${payload.totalChunks} chunks  |  ${payload.symbolsPerFrame} QR/frame  |  ${payload.parityBlockDataChunks > 0 ? `Parity every ${payload.parityBlockDataChunks} chunks` : "Standard protection"}`
+      );
+    },
+    onProgress(payload) {
+      const decoderMode = receiver.getState().decoderMode?.mode;
+      if (decoderMode) {
+        setText("decoderModeText", formatDecoderMode(decoderMode));
+      }
+      const percent = Math.round(payload.ratio * 100);
+      const progressBar = byId("progressBar");
+      const progressText = byId("progressText");
+      if (progressBar) {
+        progressBar.style.width = `${percent}%`;
+      }
+      if (progressText) {
+        progressText.textContent = `${percent}%  |  ${payload.receivedChunks}/${payload.totalChunks} chunks received`;
+      }
+      setStatus({
+        tone: payload.ratio >= 1 ? "complete" : "live",
+        title: payload.ratio >= 1 ? "Transfer complete" : "Receiving frames",
+        detail: payload.ratio >= 1
+          ? "The file is ready to save below."
+          : "Keep scanning until every chunk is collected.",
+        legacy: `receiving: ${payload.receivedChunks}/${payload.totalChunks}`
+      });
+      if (payload.ratio >= 1) {
+        setText("stageMeta", "Transfer complete. The scan stage will close and return to the save action.");
+      }
+    },
+    onDiagnostics(payload) {
+      setText(
+        "diagnosticsText",
+        `Diagnostics: ${payload.newFrames} new  |  ${payload.duplicateFrames} duplicate  |  ${formatPercent(payload.uniqueFrameRatio)} unique  |  ${payload.parityRecoveries} parity recoveries`
+      );
+    },
+    onError(error) {
+      if (error?.name === "AbortError") {
+        return;
+      }
+      setStatus({
+        tone: "error",
+        title: "Receiver error",
+        detail: error?.message || String(error),
+        legacy: `error: ${error?.message || String(error)}`
+      });
+      syncButtons(false);
+    },
+    onCameraStart() {
+      openScanDialog();
+      setText("stageMeta", "Camera is live. Keep the sender QR large, bright, and steady inside the frame.");
+      setText("cameraStatusText", "Camera: live");
+      syncButtons(true);
+    },
+    onCameraStop() {
+      if (!receiver.getState().scanning) {
+        setText("stageMeta", "Scan stopped. Open the scan stage again when the sender is ready.");
+      }
+      setText("cameraStatusText", "Camera: stopped");
+      syncButtons(false);
     }
   });
+
+  const receiverVideo = receiver.getState().elements.video;
+  if (receiverVideo) {
+    receiverVideo.id = "video";
+  }
 
   function openScanDialog() {
     openDialog(scanDialog);
   }
 
   function closeScanDialog() {
+    activeRunId += 1;
     receiver.stop();
-    receiver.stopCamera();
     closeDialog(scanDialog);
   }
 
   function closeScanDialogAfterComplete() {
-    receiver.stop();
-    receiver.stopCamera();
     closeDialog(scanDialog);
     syncButtons(false);
   }
@@ -749,7 +777,7 @@ export function initReceiverDemo({
       startBtn.disabled = Boolean(scanning);
     }
     if (stopBtn) {
-      stopBtn.disabled = !scanning && !receiver.stream;
+      stopBtn.disabled = !scanning && receiver.getState().status !== "scanning";
     }
   }
 
@@ -863,7 +891,45 @@ export function initReceiverDemo({
     }
   }
 
-  async function startScanFlow() {
+  async function handleReceiveResult(result, runId) {
+    if (runId !== activeRunId) {
+      return;
+    }
+
+    const state = receiver.getState();
+    const decoderMode = state.decoderMode?.mode || "preparing";
+    setText("decoderModeText", formatDecoderMode(decoderMode));
+    closeScanDialogAfterComplete();
+
+    if (result.kind === "folder") {
+      setText("manifestName", `${result.extracted.rootName} folder`);
+      setText("manifestMeta", `${result.extracted.fileCount} files  |  ${formatBytes(result.extracted.totalInputBytes)} extracted contents`);
+      showArchiveActions(result.extracted);
+      setStatus({
+        tone: "complete",
+        title: "Folder transfer complete",
+        detail: supportsDirectorySave()
+          ? "Use the highlighted button to save the extracted folder, or download a ZIP fallback."
+          : "This browser cannot save folders directly, so use the highlighted ZIP fallback.",
+        legacy: "status: folder transfer complete"
+      });
+      return;
+    }
+
+    setText("manifestName", result.fileName);
+    setText("manifestMeta", `${formatBytes(result.size)}  |  Ready to save`);
+    showDownload(result);
+    setStatus({
+      tone: "complete",
+      title: "Transfer complete",
+      detail: "The scan stage closed automatically. Use the highlighted download button on the page.",
+      legacy: "status: complete"
+    });
+  }
+
+  function startScanFlow() {
+    const runId = activeRunId + 1;
+    activeRunId = runId;
     openScanDialog();
     resetProgressUi();
     setText("stageMeta", "Requesting camera access and preparing the scan stage...");
@@ -876,18 +942,21 @@ export function initReceiverDemo({
       legacy: "status: starting camera"
     });
 
-    try {
-      await receiver.start();
-    } catch (error) {
-      setStatus({
-        tone: "error",
-        title: "Camera access failed",
-        detail: error?.message || String(error),
-        legacy: `error: ${error?.message || String(error)}`
+    receiver.start()
+      .then((result) => handleReceiveResult(result, runId))
+      .catch((error) => {
+        if (runId !== activeRunId || error?.name === "AbortError") {
+          return;
+        }
+        setStatus({
+          tone: "error",
+          title: "Camera access failed",
+          detail: error?.message || String(error),
+          legacy: `error: ${error?.message || String(error)}`
+        });
+        setText("stageMeta", "Camera access failed. Adjust permissions and try again.");
+        syncButtons(false);
       });
-      setText("stageMeta", "Camera access failed. Adjust permissions and try again.");
-      syncButtons(false);
-    }
   }
 
   function setReceiverStoppedStatus(detail = "You can start scanning again whenever you are ready.") {
@@ -975,168 +1044,13 @@ export function initReceiverDemo({
     }
   }
 
-  receiver.on("camera-start", () => {
-    openScanDialog();
-    setText("stageMeta", "Camera is live. Keep the sender QR large, bright, and steady inside the frame.");
-    syncButtons(true);
-  });
-
-  receiver.on("camera-tuned", (payload) => {
-    if (payload?.optimized) {
-      const settings = payload.settings || {};
-      const width = settings.width || "?";
-      const height = settings.height || "?";
-      const frameRate = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "auto fps";
-      setText("cameraStatusText", `Camera: tuned (${width}x${height}, ${frameRate})`);
-      return;
-    }
-    setText("cameraStatusText", "Camera: using the browser defaults");
-  });
-
-  receiver.on("scan-start", () => {
-    setStatus({
-      tone: "live",
-      title: "Scanning in progress",
-      detail: "Hold both devices steady while the receiver collects QR frames.",
-      legacy: "status: scanning"
-    });
-    syncButtons(true);
-  });
-
-  receiver.on("scan-stop", () => {
-    syncButtons(false);
-  });
-
-  receiver.on("decoder-mode", ({ mode }) => {
-    setText("decoderModeText", formatDecoderMode(mode));
-  });
-
-  receiver.on("camera-stop", () => {
-    if (!receiver.scanning) {
-      setText("stageMeta", "Scan stopped. Open the scan stage again when the sender is ready.");
-    }
-    setText("cameraStatusText", "Camera: stopped");
-    syncButtons(false);
-  });
-
-  receiver.on("manifest", (payload) => {
-    setText("manifestName", payload.fileName);
-    setText(
-      "manifestMeta",
-      `${formatBytes(payload.fileSize)}  |  ${payload.totalChunks} chunks  |  ${payload.symbolsPerFrame} QR/frame  |  ${describeProtection(payload)}`
-    );
-  });
-
-  receiver.on("progress", (payload) => {
-    const percent = Math.round(payload.ratio * 100);
-    const progressBar = byId("progressBar");
-    const progressText = byId("progressText");
-    if (progressBar) {
-      progressBar.style.width = `${percent}%`;
-    }
-    if (progressText) {
-      progressText.textContent = `${percent}%  |  ${payload.receivedChunks}/${payload.totalChunks} chunks received`;
-    }
-    setStatus({
-      tone: payload.ratio >= 1 ? "complete" : "live",
-      title: payload.ratio >= 1 ? "Transfer complete" : "Receiving frames",
-      detail: payload.ratio >= 1
-        ? "The file is ready to download below."
-        : "Keep scanning until every chunk is collected.",
-      legacy: `receiving: ${payload.receivedChunks}/${payload.totalChunks}`
-    });
-    if (payload.ratio >= 1) {
-      setText("stageMeta", "Transfer complete. You can save the reconstructed file from the main page.");
-    }
-  });
-
-  receiver.on("diagnostics", (payload) => {
-    setText(
-      "diagnosticsText",
-      `Diagnostics: ${payload.newFrames} new  |  ${payload.duplicateFrames} duplicate  |  ${formatPercent(payload.uniqueFrameRatio)} unique  |  ${payload.parityRecoveries} parity recoveries`
-    );
-  });
-
-  receiver.on("complete", async (result) => {
-    const progressBar = byId("progressBar");
-    const progressText = byId("progressText");
-    if (progressBar) {
-      progressBar.style.width = "100%";
-    }
-    if (progressText) {
-      progressText.textContent = `100%  |  ${result.receivedChunks}/${result.totalChunks} chunks received`;
-    }
-    setText("stageMeta", "Transfer complete. Closing the scan stage and returning to the download action.");
-    closeScanDialogAfterComplete();
-    syncButtons(false);
-
-    if (await isArchiveBlob(result.blob)) {
-      setText("manifestName", result.fileName);
-      setText("manifestMeta", `${formatBytes(result.size)}  |  Preparing extracted folder`);
-      setStatus({
-        tone: "working",
-        title: "Preparing folder output",
-        detail: "Validating the transferred archive and extracting the folder in the browser.",
-        legacy: "status: extracting folder"
-      });
-
-      try {
-        const archiveResult = await extractArchive(result.blob);
-        setText("manifestName", `${archiveResult.rootName} folder`);
-        setText("manifestMeta", `${archiveResult.fileCount} files  |  ${formatBytes(archiveResult.totalInputBytes)} extracted contents`);
-        showArchiveActions(archiveResult);
-        setStatus({
-          tone: "complete",
-          title: "Folder transfer complete",
-          detail: supportsDirectorySave()
-            ? "Use the highlighted button to save the extracted folder, or download a ZIP fallback."
-            : "This browser cannot save folders directly, so use the highlighted ZIP fallback.",
-          legacy: "status: folder transfer complete"
-        });
-        return;
-      } catch (error) {
-        setStatus({
-          tone: "error",
-          title: "Folder extraction failed",
-          detail: `${error?.message || String(error)}. Download the raw transfer archive as a fallback.`,
-          legacy: `error: ${error?.message || String(error)}`
-        });
-        showDownload(result, {
-          title: "Folder extraction failed",
-          detail: "The internal transfer archive was received, but this browser could not extract it automatically.",
-          label: `Download ${result.fileName} (${formatBytes(result.size)})`
-        });
-        return;
-      }
-    }
-
-    setText("manifestName", result.fileName);
-    setText("manifestMeta", `${formatBytes(result.size)}  |  Ready to save`);
-    showDownload(result);
-    setStatus({
-      tone: "complete",
-      title: "Transfer complete",
-      detail: "The scan stage closed automatically. Use the highlighted download button on the page.",
-      legacy: "status: complete"
-    });
-  });
-
-  receiver.on("error", ({ error }) => {
-    setStatus({
-      tone: "error",
-      title: "Receiver error",
-      detail: error?.message || String(error),
-      legacy: `error: ${error?.message || String(error)}`
-    });
-    syncButtons(false);
-  });
-
   openScanStageBtn?.addEventListener("click", () => {
-    void startScanFlow();
+    startScanFlow();
   });
 
   startBtn?.addEventListener("click", () => {
-    void startScanFlow();
+    receiver.reset();
+    startScanFlow();
   });
 
   saveFolderBtn?.addEventListener("click", () => {
@@ -1173,20 +1087,14 @@ export function initReceiverDemo({
   });
 
   hideDownload();
-  setText("manifestName", "Waiting for sender manifest");
-  setText("manifestMeta", "The file details will appear here once the first manifest is read.");
   setText("stageMeta", "Open the scan stage to start the camera and watch live progress.");
   setText("decoderModeText", "Decoder: preparing");
   setText("cameraStatusText", "Camera: preparing");
   setText("diagnosticsText", "Diagnostics: waiting for decoded frames");
-  const progressText = byId("progressText");
-  if (progressText) {
-    progressText.textContent = "0%  |  No chunks received yet";
-  }
   setStatus({
     tone: "idle",
     title: "Start the receiver",
-    detail: "Open the sender on another screen, then launch the scan stage when it is ready.",
+    detail: "Open the sender on another screen and begin scanning when it is ready.",
     legacy: "status: idle"
   });
   syncButtons(false);
