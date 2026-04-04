@@ -13,8 +13,8 @@ The Pages demo now supports:
 
 - `/` : demo home
 - `/sender` : sender mode
-- `/reciever` : receiver mode
-- `/receiver` : compatibility redirect to `/reciever`
+- `/receiver` : receiver mode
+- `/reciever` : compatibility redirect to `/receiver`
 
 ## Local Preview
 
