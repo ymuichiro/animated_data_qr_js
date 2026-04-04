@@ -334,6 +334,17 @@ function parseFooter(bytes) {
   };
 }
 
+function createLazyBlobAccessor(bytes, mimeType) {
+  let blob = null;
+  return {
+    enumerable: true,
+    get() {
+      blob ||= new Blob([bytes], { type: mimeType });
+      return blob;
+    }
+  };
+}
+
 function buildZipTree(extractedArchive) {
   const tree = {};
   for (const file of extractedArchive.files) {
@@ -616,18 +627,25 @@ export async function extractArchive(archive, options = {}) {
     ...options,
     rootName: undefined
   });
-  const archiveBytes = new Uint8Array(await archive.arrayBuffer());
-  if (archiveBytes.length < HEADER_SIZE + FOOTER_SIZE) {
+  if (!Number.isFinite(archive.size) || archive.size < HEADER_SIZE + FOOTER_SIZE) {
     throw new Error("Archive is too small");
   }
 
-  const header = parseHeader(archiveBytes);
-  const footer = parseFooter(archiveBytes);
-  if (header.manifestOffset < HEADER_SIZE || header.manifestOffset + header.manifestLength > archiveBytes.length - FOOTER_SIZE) {
+  const header = parseHeader(new Uint8Array(await archive.slice(0, HEADER_SIZE).arrayBuffer()));
+  const footer = parseFooter(new Uint8Array(
+    await archive.slice(archive.size - FOOTER_SIZE, archive.size).arrayBuffer()
+  ));
+  if (
+    header.manifestOffset < HEADER_SIZE
+    || header.manifestOffset + header.manifestLength > archive.size - FOOTER_SIZE
+  ) {
     throw new Error("Archive manifest offsets are invalid");
   }
 
-  const manifestBytes = archiveBytes.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
+  const manifestBytes = new Uint8Array(await archive.slice(
+    header.manifestOffset,
+    header.manifestOffset + header.manifestLength
+  ).arrayBuffer());
   const manifestSha256 = await sha256Hex(manifestBytes);
   if (manifestSha256 !== footer.manifestSha256) {
     throw new Error("Archive manifest integrity check failed");
@@ -665,7 +683,10 @@ export async function extractArchive(archive, options = {}) {
 
   const extractedBlocks = new Map();
   for (const block of manifest.blocks) {
-    const storedBytes = archiveBytes.subarray(block.compressedOffset, block.compressedOffset + block.compressedSize);
+    const storedBytes = new Uint8Array(await archive.slice(
+      block.compressedOffset,
+      block.compressedOffset + block.compressedSize
+    ).arrayBuffer());
     const storedHash = await sha256Hex(storedBytes);
     if (storedHash !== block.sha256) {
       throw new Error(`Archive block checksum mismatch for block ${block.blockId}`);
@@ -723,16 +744,22 @@ export async function extractArchive(archive, options = {}) {
       throw new Error(`Archive file checksum mismatch for ${path}`);
     }
 
-    files.push({
+    const fileRecord = {
       path,
       size: file.size,
       mtime: Number.isFinite(file.mtime) ? file.mtime : 0,
       mimeType: typeof file.mimeType === "string" && file.mimeType ? file.mimeType : "application/octet-stream",
-      bytes: fileBytes,
-      blob: new Blob([fileBytes], {
-        type: typeof file.mimeType === "string" && file.mimeType ? file.mimeType : "application/octet-stream"
-      })
-    });
+      bytes: fileBytes
+    };
+    Object.defineProperty(
+      fileRecord,
+      "blob",
+      createLazyBlobAccessor(
+        fileBytes,
+        typeof file.mimeType === "string" && file.mimeType ? file.mimeType : "application/octet-stream"
+      )
+    );
+    files.push(fileRecord);
   }
 
   return {
@@ -796,7 +823,7 @@ export async function saveExtractedArchiveToDirectory(extractedArchive, director
     const fileHandle = await parentHandle.getFileHandle(segments[segments.length - 1], { create: true });
     const writable = await fileHandle.createWritable();
     try {
-      await writable.write(await file.blob.arrayBuffer());
+      await writable.write(file.bytes);
     } finally {
       await writable.close();
     }

@@ -69,6 +69,13 @@ function formatDuration(ms) {
   return `${seconds}s`;
 }
 
+function formatPercent(ratio, digits = 0) {
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    return "0%";
+  }
+  return `${(ratio * 100).toFixed(digits)}%`;
+}
+
 function describeEc(level) {
   if (level === "L") {
     return "Low correction";
@@ -844,6 +851,7 @@ export function initReceiverDemo({
     setText("manifestMeta", "The file details will appear here once the first manifest is read.");
     setText("decoderModeText", "Decoder: preparing");
     setText("cameraStatusText", "Camera: preparing");
+    setText("diagnosticsText", "Diagnostics: waiting for decoded frames");
 
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
@@ -1042,6 +1050,13 @@ export function initReceiverDemo({
     }
   });
 
+  receiver.on("diagnostics", (payload) => {
+    setText(
+      "diagnosticsText",
+      `Diagnostics: ${payload.newFrames} new  |  ${payload.duplicateFrames} duplicate  |  ${formatPercent(payload.uniqueFrameRatio)} unique  |  ${payload.parityRecoveries} parity recoveries`
+    );
+  });
+
   receiver.on("complete", async (result) => {
     const progressBar = byId("progressBar");
     const progressText = byId("progressText");
@@ -1163,6 +1178,7 @@ export function initReceiverDemo({
   setText("stageMeta", "Open the scan stage to start the camera and watch live progress.");
   setText("decoderModeText", "Decoder: preparing");
   setText("cameraStatusText", "Camera: preparing");
+  setText("diagnosticsText", "Diagnostics: waiting for decoded frames");
   const progressText = byId("progressText");
   if (progressText) {
     progressText.textContent = "0%  |  No chunks received yet";

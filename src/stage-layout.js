@@ -1,6 +1,4 @@
 import { getGridDimensions } from "./grid.js";
-
-export const DEFAULT_STAGE_STYLE = "plain";
 export const CANONICAL_STAGE_SIZE = 1000;
 
 const PLAIN_PAYLOAD_INSET = 104;

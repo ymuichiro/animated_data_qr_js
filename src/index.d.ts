@@ -80,12 +80,6 @@ export interface SenderOptions {
   payloadEncoding?: PayloadEncoding;
   symbolsPerFrame?: number;
   parityBlockDataChunks?: number;
-  /** @deprecated Accepted temporarily but ignored. The sender always renders the plain payload stage. */
-  stageStyle?: "guided" | "plain";
-  /** @deprecated Accepted temporarily but ignored. */
-  guidedCalibrationIntervalFrames?: number;
-  /** @deprecated Accepted temporarily but ignored. */
-  guidedCalibrationBurstFrames?: number;
   qrOptions?: Record<string, unknown>;
 }
 
@@ -93,18 +87,26 @@ export interface ReceiverOptions {
   video?: HTMLVideoElement | null;
   scanIntervalMs?: number;
   autoStopOnComplete?: boolean;
-  /** @deprecated Accepted temporarily but ignored. ZXing/WASM is always used. */
-  preferBarcodeDetector?: boolean;
   maxSymbolsPerFrame?: number;
   scanMaxDimension?: number;
-  /** @deprecated Accepted temporarily but ignored. The decode passes are fixed internally. */
-  tileScanGridSizes?: number[];
   decoderAssetBaseUrl?: string;
-  /** @deprecated Accepted temporarily but ignored. Guided calibration has been removed. */
-  guidedCalibration?: boolean;
   cameraOptimization?: boolean;
   cameraConstraints?: MediaStreamConstraints;
   scanCanvas?: HTMLCanvasElement | null;
+}
+
+export interface ReceiverDiagnostics {
+  sessionId: string;
+  totalFramesSeen: number;
+  newFrames: number;
+  duplicateFrames: number;
+  uniqueFrameRatio: number;
+  manifestFrames: number;
+  chunkFrames: number;
+  parityFrames: number;
+  parityRecoveries: number;
+  receivedChunks: number;
+  totalChunks: number;
 }
 
 export type ArchiveProfile = "max" | "extreme" | "ultra";
@@ -263,7 +265,6 @@ export class AnimatedQrSender {
   payloadEncoding: PayloadEncoding;
   symbolsPerFrame: number;
   parityBlockDataChunks: number;
-  stageStyle: "plain";
   prepared: PreparedTransfer | null;
   frameIndex: number;
   running: boolean;
@@ -300,6 +301,7 @@ export class AnimatedQrReceiver {
     totalChunks: number;
     ratio: number;
   } | null;
+  getDiagnostics(sessionId: string): ReceiverDiagnostics | null;
   ingestFrame(frameInput: FrameInput): {
     accepted: boolean;
     frame: FrameParseResult;

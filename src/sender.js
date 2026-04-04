@@ -2,10 +2,7 @@ import QRCode from "qrcode";
 import { bytesToBase64Url } from "./utils/base64.js";
 import { splitBytes } from "./utils/chunk.js";
 import { groupIntoBatches } from "./grid.js";
-import {
-  DEFAULT_STAGE_STYLE,
-  getPlainStageLayout
-} from "./stage-layout.js";
+import { getPlainStageLayout } from "./stage-layout.js";
 import {
   createSessionId,
   encodeManifestFrame,
@@ -43,10 +40,57 @@ function getCanvasDisplaySize(canvas, symbolCount) {
   };
 }
 
-async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
+function createQrRenderCache() {
+  return {
+    strings: new Map(),
+    objects: new WeakMap()
+  };
+}
+
+function resetQrRenderCache(cache) {
+  cache.strings.clear();
+  cache.objects = new WeakMap();
+}
+
+function getCachedQrCanvas(cache, symbol) {
+  if (typeof symbol === "string") {
+    return cache.strings.get(symbol) ?? null;
+  }
+  return cache.objects.get(symbol) ?? null;
+}
+
+function setCachedQrCanvas(cache, symbol, value) {
+  if (typeof symbol === "string") {
+    cache.strings.set(symbol, value);
+    return;
+  }
+  cache.objects.set(symbol, value);
+}
+
+async function getRenderedQrCanvas(cache, symbol, drawSize, qrOptions) {
+  const cached = getCachedQrCanvas(cache, symbol);
+  if (cached && cached.drawSize === drawSize) {
+    return cached.canvas;
+  }
+
+  const qrCanvas = typeof document !== "undefined"
+    ? document.createElement("canvas")
+    : new OffscreenCanvas(drawSize, drawSize);
+  await QRCode.toCanvas(qrCanvas, symbol, {
+    ...qrOptions,
+    width: drawSize
+  });
+  setCachedQrCanvas(cache, symbol, {
+    drawSize,
+    canvas: qrCanvas
+  });
+  return qrCanvas;
+}
+
+async function renderPlainQrGrid(canvas, qrSymbols, qrOptions, renderState) {
   const { width, height } = getCanvasDisplaySize(canvas, qrSymbols.length);
-  const frameCanvas = document.createElement("canvas");
-  const context = frameCanvas.getContext("2d");
+  const frameCanvas = renderState.frameCanvas;
+  const context = renderState.frameContext;
   const layout = getPlainStageLayout(qrSymbols.length, width);
 
   frameCanvas.width = width;
@@ -59,19 +103,20 @@ async function renderPlainQrGrid(canvas, qrSymbols, qrOptions) {
     if (!cell) {
       break;
     }
-    const tempCanvas = document.createElement("canvas");
     const drawSize = Math.max(
       96,
       Math.min(cell.width, cell.height) - Math.round(Math.min(cell.width, cell.height) * 0.06)
     );
-    await QRCode.toCanvas(tempCanvas, qrSymbols[index], {
-      ...qrOptions,
-      width: drawSize
-    });
+    const qrCanvas = await getRenderedQrCanvas(
+      renderState.qrRenderCache,
+      qrSymbols[index],
+      drawSize,
+      qrOptions
+    );
 
     const x = cell.x + Math.max(0, Math.floor((cell.width - drawSize) / 2));
     const y = cell.y + Math.max(0, Math.floor((cell.height - drawSize) / 2));
-    context.drawImage(tempCanvas, x, y, drawSize, drawSize);
+    context.drawImage(qrCanvas, x, y, drawSize, drawSize);
   }
 
   const targetContext = canvas.getContext("2d");
@@ -344,13 +389,15 @@ export class AnimatedQrSender extends SimpleEmitter {
       scale: 6,
       ...(options.qrOptions ?? {})
     };
-    this.stageStyle = DEFAULT_STAGE_STYLE;
 
     this.prepared = null;
     this.frameIndex = 0;
     this.loopIndex = 0;
     this.running = false;
     this.timer = null;
+    this.qrRenderCache = createQrRenderCache();
+    this.frameCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
+    this.frameContext = this.frameCanvas?.getContext("2d") ?? null;
   }
 
   setCanvas(canvas) {
@@ -369,6 +416,7 @@ export class AnimatedQrSender extends SimpleEmitter {
       frameIntervalMs: options.frameIntervalMs ?? this.frameIntervalMs
     });
 
+    resetQrRenderCache(this.qrRenderCache);
     this.prepared = transfer;
     this.frameIndex = 0;
     this.loopIndex = 0;
@@ -387,6 +435,9 @@ export class AnimatedQrSender extends SimpleEmitter {
     if (!this.canvas) {
       throw new Error("No canvas configured. Pass { canvas } or call setCanvas().");
     }
+    if (!this.frameCanvas || !this.frameContext) {
+      throw new Error("Canvas rendering is not available in this environment.");
+    }
 
     const length = this.prepared.displayFrames.length;
     const safeIndex = ((frameIndex % length) + length) % length;
@@ -395,7 +446,11 @@ export class AnimatedQrSender extends SimpleEmitter {
       safeIndex + this.loopIndex
     );
 
-    await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions);
+    await renderPlainQrGrid(this.canvas, displayFrame.qrSymbols, this.qrOptions, {
+      frameCanvas: this.frameCanvas,
+      frameContext: this.frameContext,
+      qrRenderCache: this.qrRenderCache
+    });
 
     this.emit("frame", {
       frameIndex: safeIndex,

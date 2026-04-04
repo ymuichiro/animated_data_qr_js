@@ -32,11 +32,21 @@ function createSession(sessionId, totalChunks) {
     fileSize: null,
     mimeType: "application/octet-stream",
     fileName: `transfer-${sessionId}.bin`,
-    chunks: new Array(totalChunks).fill(null),
+    chunks: new Map(),
     parityChunks: new Map(),
     receivedChunks: 0,
     manifestReceived: false,
-    completed: false
+    completed: false,
+    diagnostics: {
+      startedAt: Date.now(),
+      totalFramesSeen: 0,
+      newFrames: 0,
+      duplicateFrames: 0,
+      manifestFrames: 0,
+      chunkFrames: 0,
+      parityFrames: 0,
+      parityRecoveries: 0
+    }
   };
 }
 
@@ -49,6 +59,25 @@ function createProgressPayload(session) {
     receivedChunks: session.receivedChunks,
     totalChunks: session.totalChunks,
     ratio
+  };
+}
+
+function createDiagnosticsPayload(session) {
+  const totalFrames = session.diagnostics.totalFramesSeen;
+  const uniqueFrames = session.diagnostics.newFrames;
+  const duplicateFrames = session.diagnostics.duplicateFrames;
+  return {
+    sessionId: session.sessionId,
+    totalFramesSeen: totalFrames,
+    newFrames: uniqueFrames,
+    duplicateFrames,
+    uniqueFrameRatio: totalFrames > 0 ? uniqueFrames / totalFrames : 0,
+    manifestFrames: session.diagnostics.manifestFrames,
+    chunkFrames: session.diagnostics.chunkFrames,
+    parityFrames: session.diagnostics.parityFrames,
+    parityRecoveries: session.diagnostics.parityRecoveries,
+    receivedChunks: session.receivedChunks,
+    totalChunks: session.totalChunks
   };
 }
 
@@ -68,6 +97,18 @@ function getFrameKey(frame) {
   return "unknown";
 }
 
+function hasChunk(session, chunkIndex) {
+  return session.chunks.has(chunkIndex);
+}
+
+function setChunk(session, chunkIndex, chunkBytes) {
+  session.chunks.set(chunkIndex, chunkBytes);
+}
+
+function getChunk(session, chunkIndex) {
+  return session.chunks.get(chunkIndex) ?? null;
+}
+
 function recoverParityChunk(session, blockStartChunkIndex) {
   if (!session.parityBlockDataChunks || !session.parityChunks.has(blockStartChunkIndex)) {
     return null;
@@ -81,7 +122,7 @@ function recoverParityChunk(session, blockStartChunkIndex) {
   let missingCount = 0;
 
   for (let chunkIndex = blockStartChunkIndex; chunkIndex < blockEndChunkIndex; chunkIndex += 1) {
-    if (session.chunks[chunkIndex] === null) {
+    if (!hasChunk(session, chunkIndex)) {
       missingChunkIndex = chunkIndex;
       missingCount += 1;
       if (missingCount > 1) {
@@ -100,7 +141,7 @@ function recoverParityChunk(session, blockStartChunkIndex) {
     if (chunkIndex === missingChunkIndex) {
       continue;
     }
-    const chunkBytes = session.chunks[chunkIndex];
+    const chunkBytes = getChunk(session, chunkIndex);
     for (let index = 0; index < chunkBytes.length; index += 1) {
       recoveredChunk[index] ^= chunkBytes[index];
     }
@@ -115,6 +156,21 @@ function recoverParityChunk(session, blockStartChunkIndex) {
     chunkIndex: missingChunkIndex,
     chunkBytes: recoveredChunk.slice(0, chunkLength)
   };
+}
+
+function concatSessionChunks(session) {
+  const orderedChunks = [];
+  for (let chunkIndex = 0; chunkIndex < session.totalChunks; chunkIndex += 1) {
+    const chunkBytes = getChunk(session, chunkIndex);
+    if (!(chunkBytes instanceof Uint8Array)) {
+      return null;
+    }
+    orderedChunks.push(chunkBytes);
+  }
+  return concatChunks(
+    orderedChunks,
+    Number.isInteger(session.fileSize) ? session.fileSize : null
+  );
 }
 
 export function createDownloadLink(result, anchorElement = null) {
@@ -134,12 +190,8 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     this.video = options.video ?? null;
     this.scanIntervalMs = options.scanIntervalMs ?? 120;
     this.autoStopOnComplete = options.autoStopOnComplete ?? true;
-    this.preferBarcodeDetector = options.preferBarcodeDetector ?? true;
     this.maxSymbolsPerFrame = options.maxSymbolsPerFrame ?? 4;
     this.scanMaxDimension = options.scanMaxDimension ?? 960;
-    this.tileScanGridSizes = Array.isArray(options.tileScanGridSizes)
-      ? Array.from(new Set(options.tileScanGridSizes))
-      : [2, 3];
     this.decoderAssetBaseUrl = options.decoderAssetBaseUrl ?? null;
     this.cameraOptimization = options.cameraOptimization ?? true;
     this.cameraConstraints = options.cameraConstraints ?? {
@@ -255,6 +307,11 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     return session ? createProgressPayload(session) : null;
   }
 
+  getDiagnostics(sessionId) {
+    const session = this.sessions.get(sessionId);
+    return session ? createDiagnosticsPayload(session) : null;
+  }
+
   ingestFrame(frameInput) {
     const frame = parseFrame(frameInput);
     if (!frame || !frame.sessionId) {
@@ -271,7 +328,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       if (session.totalChunks !== frame.totalChunks) {
         if (session.receivedChunks === 0) {
           session.totalChunks = frame.totalChunks;
-          session.chunks = new Array(frame.totalChunks).fill(null);
+          session.chunks = new Map();
         } else {
           return { accepted: false, frame, result: null };
         }
@@ -282,7 +339,15 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       session.fileSize = frame.fileSize;
       session.mimeType = frame.mimeType;
       session.fileName = frame.fileName;
+      const manifestWasNew = !session.manifestReceived;
       session.manifestReceived = true;
+      session.diagnostics.totalFramesSeen += 1;
+      session.diagnostics.manifestFrames += 1;
+      if (manifestWasNew) {
+        session.diagnostics.newFrames += 1;
+      } else {
+        session.diagnostics.duplicateFrames += 1;
+      }
       this.emit("manifest", {
         sessionId: session.sessionId,
         fileName: session.fileName,
@@ -297,27 +362,38 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       if (frame.totalChunks !== session.totalChunks || frame.chunkIndex >= session.totalChunks) {
         return { accepted: false, frame, result: null };
       }
-      if (session.chunks[frame.chunkIndex] === null) {
-        session.chunks[frame.chunkIndex] = frame.dataBytes;
+      session.diagnostics.totalFramesSeen += 1;
+      session.diagnostics.chunkFrames += 1;
+      if (!hasChunk(session, frame.chunkIndex)) {
+        setChunk(session, frame.chunkIndex, frame.dataBytes);
         session.receivedChunks += 1;
+        session.diagnostics.newFrames += 1;
         this.emit("chunk", {
           sessionId: session.sessionId,
           chunkIndex: frame.chunkIndex,
           receivedChunks: session.receivedChunks,
           totalChunks: session.totalChunks
         });
+      } else {
+        session.diagnostics.duplicateFrames += 1;
       }
     } else if (frame.type === "parity") {
       if (frame.totalChunks !== session.totalChunks) {
         return { accepted: false, frame, result: null };
       }
+      session.diagnostics.totalFramesSeen += 1;
+      session.diagnostics.parityFrames += 1;
       if (!session.parityChunks.has(frame.blockStartChunkIndex)) {
         session.parityChunks.set(frame.blockStartChunkIndex, frame.dataBytes);
+        session.diagnostics.newFrames += 1;
+      } else {
+        session.diagnostics.duplicateFrames += 1;
       }
       const recoveredFromParity = recoverParityChunk(session, frame.blockStartChunkIndex);
-      if (recoveredFromParity && session.chunks[recoveredFromParity.chunkIndex] === null) {
-        session.chunks[recoveredFromParity.chunkIndex] = recoveredFromParity.chunkBytes;
+      if (recoveredFromParity && !hasChunk(session, recoveredFromParity.chunkIndex)) {
+        setChunk(session, recoveredFromParity.chunkIndex, recoveredFromParity.chunkBytes);
         session.receivedChunks += 1;
+        session.diagnostics.parityRecoveries += 1;
         this.emit("recover", {
           sessionId: session.sessionId,
           chunkIndex: recoveredFromParity.chunkIndex,
@@ -330,9 +406,10 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     if (frame.type === "chunk" && session.parityBlockDataChunks > 0) {
       const blockStartChunkIndex = frame.chunkIndex - (frame.chunkIndex % session.parityBlockDataChunks);
       const recoveredFromChunk = recoverParityChunk(session, blockStartChunkIndex);
-      if (recoveredFromChunk && session.chunks[recoveredFromChunk.chunkIndex] === null) {
-        session.chunks[recoveredFromChunk.chunkIndex] = recoveredFromChunk.chunkBytes;
+      if (recoveredFromChunk && !hasChunk(session, recoveredFromChunk.chunkIndex)) {
+        setChunk(session, recoveredFromChunk.chunkIndex, recoveredFromChunk.chunkBytes);
         session.receivedChunks += 1;
+        session.diagnostics.parityRecoveries += 1;
         this.emit("recover", {
           sessionId: session.sessionId,
           chunkIndex: recoveredFromChunk.chunkIndex,
@@ -344,17 +421,14 @@ export class AnimatedQrReceiver extends SimpleEmitter {
 
     const progress = createProgressPayload(session);
     this.emit("progress", progress);
+    this.emit("diagnostics", createDiagnosticsPayload(session));
 
     if (!session.completed && session.manifestReceived && session.receivedChunks === session.totalChunks) {
-      const allChunks = session.chunks.every((value) => value instanceof Uint8Array);
-      if (!allChunks) {
+      const bytes = concatSessionChunks(session);
+      if (!(bytes instanceof Uint8Array)) {
         return { accepted: true, frame, result: null };
       }
 
-      const bytes = concatChunks(
-        session.chunks,
-        Number.isInteger(session.fileSize) ? session.fileSize : null
-      );
       const blob = new Blob([bytes], { type: session.mimeType });
       const result = {
         sessionId: session.sessionId,

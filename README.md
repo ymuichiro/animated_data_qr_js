@@ -9,13 +9,13 @@ GitHub Pages is published here:
 
 - [Demo home](https://ymuichiro.github.io/animated_data_qr_js/)
 - [Sender demo](https://ymuichiro.github.io/animated_data_qr_js/sender/)
-- [Receiver demo](https://ymuichiro.github.io/animated_data_qr_js/reciever/)
+- [Receiver demo](https://ymuichiro.github.io/animated_data_qr_js/receiver/)
 
 Demo routes:
 
 - `/sender`: sender mode
-- `/reciever`: receiver mode
-- `/receiver`: compatibility redirect to `/reciever`
+- `/receiver`: receiver mode
+- `/reciever`: compatibility redirect to `/receiver`
 
 The current demo UI is designed to be:
 
@@ -101,7 +101,6 @@ Important defaults:
 - `chunkByteSize`: `220`
 - `payloadEncoding`: `binary`
 - `symbolsPerFrame`: `1`
-- `stageStyle`: `plain`
 
 ### `TRANSFER_PRESETS`
 
@@ -128,10 +127,8 @@ Notable options:
 
 - `scanMaxDimension`: caps the internal processing resolution used for decoding
 - `decoderAssetBaseUrl`: overrides where the receiver looks for `animated-data-qr.decoder.worker.js` and `zxing_reader.wasm`
-- `guidedCalibration`: deprecated and ignored
 - `cameraOptimization`: applies supported camera constraints after `getUserMedia()`
-- `preferBarcodeDetector`: deprecated and ignored
-- `tileScanGridSizes`: deprecated and ignored
+- `getDiagnostics(sessionId)`: returns duplicate/new frame counts and parity recovery counts for tuning
 
 ### `createArchive(inputs, options?)`
 

@@ -71,8 +71,12 @@ describe("transfer flow", () => {
     receiver.ingestFrame(transfer.frames[1]);
 
     const progress = receiver.getProgress("dup-session");
+    const diagnostics = receiver.getDiagnostics("dup-session");
     expect(progress).not.toBeNull();
     expect(progress?.receivedChunks).toBe(1);
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics?.newFrames).toBe(2);
+    expect(diagnostics?.duplicateFrames).toBe(1);
   });
 
   it("estimates loop duration and throughput", () => {
@@ -142,6 +146,8 @@ describe("transfer flow", () => {
     }
 
     expect(recoveredChunkIndex).toBe(1);
+    const diagnostics = receiver.getDiagnostics("parity-session");
+    expect(diagnostics?.parityRecoveries).toBe(1);
     expect(completed).not.toBeNull();
     const outputBytes = new Uint8Array(await completed.blob.arrayBuffer());
     expect(Array.from(outputBytes)).toEqual(Array.from(inputBytes));
