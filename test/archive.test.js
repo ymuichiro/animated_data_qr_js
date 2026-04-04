@@ -7,7 +7,7 @@ import {
   extractArchive,
   isArchiveBlob,
   saveExtractedArchiveToDirectory
-} from "../src/index.js";
+} from "../src/archive.js";
 
 function createFolderFile(path, contents, type = "text/plain") {
   const fileName = path.split("/").pop();

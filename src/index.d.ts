@@ -1,35 +1,5 @@
 export type PayloadEncoding = "binary" | "base64";
-export type FrameInput = string | Uint8Array;
-
-export type FrameParseResult =
-  | {
-      type: "manifest";
-      sessionId: string;
-      totalChunks: number;
-      chunkByteSize: number;
-      fileSize: number;
-      mimeType: string;
-      fileName: string;
-      parityBlockDataChunks: number;
-      symbolsPerFrame: number;
-    }
-  | {
-      type: "chunk";
-      sessionId: string;
-      chunkIndex: number;
-      totalChunks: number;
-      dataBytes: Uint8Array;
-      dataBase64Url?: string;
-    }
-  | {
-      type: "parity";
-      sessionId: string;
-      blockStartChunkIndex: number;
-      totalChunks: number;
-      dataBytes: Uint8Array;
-      dataBase64Url?: string;
-    }
-  | null;
+export type ArchiveProfile = "max" | "extreme" | "ultra";
 
 export interface TransferEstimate {
   fileSize: number;
@@ -43,73 +13,16 @@ export interface TransferEstimate {
   bytesPerSecond: number;
 }
 
-export interface CreateTransferFramesOptions {
-  chunkByteSize?: number;
-  sessionId?: string;
-  fileName?: string;
-  mimeType?: string;
-  payloadEncoding?: PayloadEncoding;
-  frameIntervalMs?: number;
-  symbolsPerFrame?: number;
-  parityBlockDataChunks?: number;
-}
-
-export interface PreparedTransfer {
-  sessionId: string;
-  fileName: string;
-  mimeType: string;
-  fileSize: number;
+export interface TransferPreset {
+  frameIntervalMs: number;
   chunkByteSize: number;
-  totalChunks: number;
   payloadEncoding: PayloadEncoding;
   symbolsPerFrame: number;
   parityBlockDataChunks: number;
-  frames: FrameInput[];
-  qrFrames: Array<string | Array<{ data: Uint8ClampedArray; mode: "byte" }>>;
-  displayFrames: Array<{
-    symbols: FrameInput[];
-    qrSymbols: Array<string | Array<{ data: Uint8ClampedArray; mode: "byte" }>>;
-  }>;
-  estimatedStats: TransferEstimate;
+  qrOptions: {
+    errorCorrectionLevel: "L" | "M" | "Q" | "H";
+  };
 }
-
-export interface SenderOptions {
-  canvas?: HTMLCanvasElement | null;
-  frameIntervalMs?: number;
-  chunkByteSize?: number;
-  payloadEncoding?: PayloadEncoding;
-  symbolsPerFrame?: number;
-  parityBlockDataChunks?: number;
-  qrOptions?: Record<string, unknown>;
-}
-
-export interface ReceiverOptions {
-  video?: HTMLVideoElement | null;
-  scanIntervalMs?: number;
-  autoStopOnComplete?: boolean;
-  maxSymbolsPerFrame?: number;
-  scanMaxDimension?: number;
-  decoderAssetBaseUrl?: string;
-  cameraOptimization?: boolean;
-  cameraConstraints?: MediaStreamConstraints;
-  scanCanvas?: HTMLCanvasElement | null;
-}
-
-export interface ReceiverDiagnostics {
-  sessionId: string;
-  totalFramesSeen: number;
-  newFrames: number;
-  duplicateFrames: number;
-  uniqueFrameRatio: number;
-  manifestFrames: number;
-  chunkFrames: number;
-  parityFrames: number;
-  parityRecoveries: number;
-  receivedChunks: number;
-  totalChunks: number;
-}
-
-export type ArchiveProfile = "max" | "extreme" | "ultra";
 
 export interface ArchiveProgressEventPayload {
   phase: "scan" | "compress" | "finalize" | "extract";
@@ -173,74 +86,162 @@ export interface ExtractedArchive {
   };
 }
 
-export interface ReceivedTransfer {
+export interface SenderMountOptions {
+  frameIntervalMs?: number;
+  chunkByteSize?: number;
+  payloadEncoding?: PayloadEncoding;
+  symbolsPerFrame?: number;
+  parityBlockDataChunks?: number;
+  qrOptions?: Record<string, unknown>;
+}
+
+export interface SenderLoadOptions extends SenderMountOptions {
+  sessionId?: string;
+  fileName?: string;
+  mimeType?: string;
+}
+
+export interface SendTextOptions extends SenderLoadOptions {}
+export interface SendBinaryOptions extends SenderLoadOptions {}
+export interface SendBlobOptions extends SenderLoadOptions {}
+export interface SendFolderOptions extends SenderLoadOptions, ArchiveOptions {}
+
+export interface PreparedTransferSummary {
+  inputKind: "text" | "bytes" | "blob" | "folder";
   sessionId: string;
-  blob: Blob;
   fileName: string;
   mimeType: string;
   size: number;
   totalChunks: number;
-  receivedChunks: number;
-}
-
-export interface TransferPreset {
-  frameIntervalMs: number;
-  chunkByteSize: number;
-  payloadEncoding: PayloadEncoding;
+  totalFrames: number;
   symbolsPerFrame: number;
   parityBlockDataChunks: number;
-  qrOptions: {
-    errorCorrectionLevel: "L" | "M" | "Q" | "H";
-  };
+  estimatedStats: TransferEstimate;
+  archive?: ArchiveManifestPreview;
 }
 
-export const PROTOCOL_MAGIC: string;
-export const ARCHIVE_MAGIC: string;
-export const ARCHIVE_VERSION: number;
-export const ARCHIVE_MIME_TYPE: string;
-export const ARCHIVE_EXTENSION: string;
-export const DEFAULT_FRAME_INTERVAL_MS: number;
-export const DEFAULT_CHUNK_BYTE_SIZE: number;
-export const DEFAULT_PAYLOAD_ENCODING: PayloadEncoding;
-export const DEFAULT_SYMBOLS_PER_FRAME: number;
-export const TRANSFER_PRESETS: Record<string, TransferPreset>;
+export interface SenderState {
+  status: "idle" | "prepared" | "running" | "destroyed";
+  target: HTMLElement;
+  elements: {
+    canvas: HTMLCanvasElement | null;
+  };
+  prepared: PreparedTransferSummary | null;
+  inputKind: PreparedTransferSummary["inputKind"] | null;
+  running: boolean;
+}
 
-export function createSessionId(): string;
-export function encodeManifestFrame(input: {
+export interface QrSenderController {
+  loadText(text: string, options?: SendTextOptions): Promise<PreparedTransferSummary>;
+  loadBytes(bytes: Uint8Array, options?: SendBinaryOptions): Promise<PreparedTransferSummary>;
+  loadBlob(blob: Blob, options?: SendBlobOptions): Promise<PreparedTransferSummary>;
+  loadFolder(inputs: ArrayLike<File>, options?: SendFolderOptions): Promise<PreparedTransferSummary>;
+  start(): Promise<void>;
+  stop(): void;
+  clear(): void;
+  destroy(): void;
+  getState(): SenderState;
+}
+
+export interface ReceiverManifest {
   sessionId: string;
-  totalChunks: number;
-  chunkByteSize: number;
-  fileSize: number;
-  mimeType: string;
   fileName: string;
-  parityBlockDataChunks?: number;
-  symbolsPerFrame?: number;
-}): string;
-export function encodeChunkFrame(input: {
-  sessionId: string;
-  chunkIndex: number;
+  mimeType: string;
+  fileSize: number;
+  chunkByteSize: number;
+  symbolsPerFrame: number;
+  parityBlockDataChunks: number;
   totalChunks: number;
-  dataBase64Url: string;
-}): string;
-export function encodeChunkFrameBinary(input: {
+}
+
+export interface ReceiverProgress {
   sessionId: string;
-  chunkIndex: number;
+  receivedChunks: number;
   totalChunks: number;
-  dataBytes: Uint8Array;
-}): Uint8Array;
-export function encodeParityFrame(input: {
+  ratio: number;
+}
+
+export interface ReceiverDiagnostics {
   sessionId: string;
-  blockStartChunkIndex: number;
+  totalFramesSeen: number;
+  newFrames: number;
+  duplicateFrames: number;
+  uniqueFrameRatio: number;
+  manifestFrames: number;
+  chunkFrames: number;
+  parityFrames: number;
+  parityRecoveries: number;
+  receivedChunks: number;
   totalChunks: number;
-  dataBase64Url: string;
-}): string;
-export function encodeParityFrameBinary(input: {
-  sessionId: string;
-  blockStartChunkIndex: number;
-  totalChunks: number;
-  dataBytes: Uint8Array;
-}): Uint8Array;
-export function parseFrame(frameInput: FrameInput): FrameParseResult;
+}
+
+export type ReceiveResult =
+  | {
+      kind: "file";
+      sessionId: string;
+      blob: Blob;
+      fileName: string;
+      mimeType: string;
+      size: number;
+      totalChunks: number;
+      receivedChunks: number;
+    }
+  | {
+      kind: "folder";
+      sessionId: string;
+      archiveBlob: Blob;
+      archiveFileName: string;
+      extracted: ExtractedArchive;
+      totalChunks: number;
+      receivedChunks: number;
+    };
+
+export interface ReceiverMountOptions {
+  scanIntervalMs?: number;
+  autoStopOnComplete?: boolean;
+  maxSymbolsPerFrame?: number;
+  scanMaxDimension?: number;
+  decoderAssetBaseUrl?: string;
+  cameraOptimization?: boolean;
+  cameraConstraints?: MediaStreamConstraints;
+  onManifest?: (manifest: ReceiverManifest) => void;
+  onProgress?: (progress: ReceiverProgress) => void;
+  onDiagnostics?: (diagnostics: ReceiverDiagnostics) => void;
+  onError?: (error: Error) => void;
+  onCameraStart?: (payload: { stream: MediaStream }) => void;
+  onCameraStop?: (payload: Record<string, never>) => void;
+}
+
+export interface ReceiverState {
+  status: "idle" | "starting" | "scanning" | "stopped" | "completed" | "error" | "destroyed";
+  target: HTMLElement;
+  elements: {
+    video: HTMLVideoElement | null;
+    scanCanvas: HTMLCanvasElement | null;
+  };
+  manifest: ReceiverManifest | null;
+  progress: ReceiverProgress | null;
+  diagnostics: ReceiverDiagnostics | null;
+  result: ReceiveResult | null;
+  error: Error | null;
+  scanning: boolean;
+  decoderMode: {
+    mode: string;
+    reason?: unknown;
+  } | null;
+  camera: Record<string, unknown> | null;
+}
+
+export interface QrReceiverController {
+  start(): Promise<ReceiveResult>;
+  stop(): void;
+  reset(): void;
+  destroy(): void;
+  getState(): ReceiverState;
+}
+
+export function createQrSender(target: HTMLElement, options?: SenderMountOptions): QrSenderController;
+export function createQrReceiver(target: HTMLElement, options?: ReceiverMountOptions): QrReceiverController;
 
 export function resolveTransferPreset(name?: string): TransferPreset;
 export function estimateTransferStats(input: {
@@ -251,70 +252,6 @@ export function estimateTransferStats(input: {
   manifestFrames?: number;
   extraFrames?: number;
 }): TransferEstimate;
-
-export function createTransferFrames(
-  fileLike: Blob & { name?: string; type?: string },
-  options?: CreateTransferFramesOptions
-): Promise<PreparedTransfer>;
-
-export class AnimatedQrSender {
-  constructor(options?: SenderOptions);
-  canvas: HTMLCanvasElement | null;
-  frameIntervalMs: number;
-  chunkByteSize: number;
-  payloadEncoding: PayloadEncoding;
-  symbolsPerFrame: number;
-  parityBlockDataChunks: number;
-  prepared: PreparedTransfer | null;
-  frameIndex: number;
-  running: boolean;
-  setCanvas(canvas: HTMLCanvasElement): void;
-  prepare(
-    fileLike: Blob & { name?: string; type?: string },
-    options?: CreateTransferFramesOptions
-  ): Promise<PreparedTransfer>;
-  getFrames(): FrameInput[];
-  renderFrameAt(frameIndex: number): Promise<FrameInput[]>;
-  start(): Promise<void>;
-  stop(): void;
-  on(eventName: string, listener: (payload: any) => void): () => void;
-  off(eventName: string, listener: (payload: any) => void): void;
-}
-
-export class AnimatedQrReceiver {
-  constructor(options?: ReceiverOptions);
-  video: HTMLVideoElement | null;
-  scanIntervalMs: number;
-  autoStopOnComplete: boolean;
-  maxSymbolsPerFrame: number;
-  scanMaxDimension: number;
-  decoderAssetBaseUrl: string | null;
-  setVideo(videoElement: HTMLVideoElement): void;
-  startCamera(constraints?: MediaStreamConstraints): Promise<MediaStream>;
-  stopCamera(): void;
-  start(constraints?: MediaStreamConstraints): Promise<void>;
-  stop(): void;
-  reset(sessionId?: string | null): void;
-  getProgress(sessionId: string): {
-    sessionId: string;
-    receivedChunks: number;
-    totalChunks: number;
-    ratio: number;
-  } | null;
-  getDiagnostics(sessionId: string): ReceiverDiagnostics | null;
-  ingestFrame(frameInput: FrameInput): {
-    accepted: boolean;
-    frame: FrameParseResult;
-    result: ReceivedTransfer | null;
-  };
-  ingestFrameText(frameInput: FrameInput): {
-    accepted: boolean;
-    frame: FrameParseResult;
-    result: ReceivedTransfer | null;
-  };
-  on(eventName: string, listener: (payload: any) => void): () => void;
-  off(eventName: string, listener: (payload: any) => void): void;
-}
 
 export function createArchive(
   inputs: ArrayLike<(Blob & { name?: string; type?: string; lastModified?: number; webkitRelativePath?: string })>,
@@ -344,11 +281,11 @@ export function saveExtractedArchiveToDirectory(
   fileCount: number;
 }>;
 
-export function isArchiveBlob(blobLike: Blob): Promise<boolean>;
-export function supportsDirectorySave(): boolean;
-
 export function createDownloadLink(
-  result: ReceivedTransfer,
+  result: {
+    blob: Blob;
+    fileName: string;
+  },
   anchorElement?: HTMLAnchorElement | null
 ): {
   url: string;

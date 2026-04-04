@@ -99,7 +99,7 @@
 
         <div class="video-card video-card--modal">
           <div class="video-frame video-frame--modal">
-            <video id="video" autoplay muted playsinline></video>
+            <div id="videoMount"></div>
           </div>
           <p id="stageMeta" class="video-caption">Open the scan stage to start the camera and watch live progress.</p>
         </div>
@@ -143,24 +143,18 @@
 
     <script type="module">
       import {
-        AnimatedQrReceiver,
+        createQrReceiver,
         createArchiveZipBlob,
         createDownloadLink,
-        extractArchive,
-        isArchiveBlob,
-        saveExtractedArchiveToDirectory,
-        supportsDirectorySave
+        saveExtractedArchiveToDirectory
       } from "../dist/animated-data-qr.esm.js";
       import { initReceiverDemo } from "../docs/assets/demo-ui.js";
 
       initReceiverDemo({
-        AnimatedQrReceiver,
+        createQrReceiver,
         createArchiveZipBlob,
         createDownloadLink,
-        extractArchive,
-        isArchiveBlob,
-        saveExtractedArchiveToDirectory,
-        supportsDirectorySave
+        saveExtractedArchiveToDirectory
       });
     </script>
   </body>

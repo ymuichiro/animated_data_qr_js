@@ -1,50 +1,19 @@
 # animated-data-qr-js
 
-A JavaScript library for fully offline browser-to-browser file transfer over animated QR codes.
-The sender splits a file into chunks, renders them as a looping QR sequence, and the receiver reconstructs the file from camera scans in the browser.
+Offline browser-to-browser transfer over animated QR codes.
+The package is published as a JavaScript library first. The GitHub Pages app is only a thin demo built on the same public API.
 
 ## Live Demo
-
-GitHub Pages is published here:
 
 - [Demo home](https://ymuichiro.github.io/animated_data_qr_js/)
 - [Sender demo](https://ymuichiro.github.io/animated_data_qr_js/sender/)
 - [Receiver demo](https://ymuichiro.github.io/animated_data_qr_js/receiver/)
 
-Demo routes:
+Routes:
 
-- `/sender`: sender mode
-- `/receiver`: receiver mode
-- `/reciever`: compatibility redirect to `/receiver`
-
-The current demo UI is designed to be:
-
-- preset-first, with low-level transfer tuning hidden by default
-- mobile-friendly and responsive
-- easy to operate during live demos
-- able to send either a single file or a whole folder
-- sender and receiver stages shown in focused modals
-- full-width mobile scan modal for the receiver camera
-- extracted-folder save or ZIP fallback on the receiver for folder transfers
-- suitable for GitHub Pages hosting
-
-GitHub Pages source files live in [`docs/`](./docs).
-
-## Features
-
-- fully offline optical one-way transfer
-- no server upload
-- no WebRTC, WebSocket, Bluetooth, or direct network transport
-- browser-only sender and receiver flows
-- npm, jsDelivr, UMD, and ESM distribution
-- default frame interval of `250ms`
-- default `binary` payload encoding
-- multi-symbol transfer with `symbolsPerFrame`
-- XOR parity recovery with `parityBlockDataChunks`
-- secure folder transfer via an internal `SARC1` archive container
-- folder restore as extracted files or standard ZIP fallback
-- ZXing/WASM receiver decoding with worker-first execution
-- automatic fallback to main-thread ZXing when a worker cannot start
+- `/sender`
+- `/receiver`
+- `/reciever` redirects to `/receiver`
 
 ## Install
 
@@ -58,17 +27,21 @@ npm install animated-data-qr-js
 <script src="https://cdn.jsdelivr.net/npm/animated-data-qr-js@0.1.0/dist/animated-data-qr.umd.min.js"></script>
 ```
 
-The receiver auto-loads these adjacent files from the same directory:
+The receiver also needs these adjacent assets from the same directory:
 
 - `animated-data-qr.decoder.worker.js`
 - `zxing_reader.wasm`
 
-## ESM
+## Public API
+
+### ESM import
 
 ```js
 import {
-  AnimatedQrSender,
-  AnimatedQrReceiver,
+  createQrSender,
+  createQrReceiver,
+  resolveTransferPreset,
+  estimateTransferStats,
   createArchive,
   extractArchive,
   createArchiveZipBlob,
@@ -77,185 +50,182 @@ import {
 } from "animated-data-qr-js";
 ```
 
-If your asset pipeline moves the worker or WASM files away from the main bundle, pass
-`decoderAssetBaseUrl` when creating the receiver.
+### Sender
 
-## Core API
+```js
+import { createQrSender, resolveTransferPreset } from "animated-data-qr-js";
 
-### `createTransferFrames(fileLike, options?)`
+const mount = document.querySelector("#sender-stage");
+const sender = createQrSender(mount);
+const preset = resolveTransferPreset("compatibility");
 
-Builds the transfer frame sequence for a file, including the manifest and chunk frames.
+const summary = await sender.loadText("hello from animated qr", {
+  fileName: "message.txt",
+  chunkByteSize: preset.chunkByteSize,
+  frameIntervalMs: preset.frameIntervalMs,
+  payloadEncoding: preset.payloadEncoding,
+  symbolsPerFrame: preset.symbolsPerFrame,
+  parityBlockDataChunks: preset.parityBlockDataChunks
+});
 
-### `new AnimatedQrSender(options?)`
+console.log(summary.totalChunks, summary.estimatedStats.loopDurationMs);
+await sender.start();
+```
 
-Main methods:
+`createQrSender(target, options?)` mounts an internal `<canvas>` into the provided container and returns a controller with:
 
-- `prepare(fileLike, options?)`
+- `loadText(text, options?)`
+- `loadBytes(bytes, options?)`
+- `loadBlob(blob, options?)`
+- `loadFolder(fileListLike, options?)`
 - `start()`
 - `stop()`
-- `renderFrameAt(index)`
+- `clear()`
+- `destroy()`
+- `getState()`
 
-Important defaults:
+`loadFolder()` uses the internal archive pipeline automatically.
 
-- `frameIntervalMs`: `250`
-- `chunkByteSize`: `220`
-- `payloadEncoding`: `binary`
-- `symbolsPerFrame`: `1`
+### Receiver
 
-### `TRANSFER_PRESETS`
+```js
+import {
+  createQrReceiver,
+  createArchiveZipBlob,
+  saveExtractedArchiveToDirectory,
+  createDownloadLink
+} from "animated-data-qr-js";
 
-- `compatibility`: `220 bytes`, `250ms`, `EC=M`, `parityBlockDataChunks=4`
-- `balanced`: `384 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`, `parityBlockDataChunks=6`
-- `throughput`: `512 bytes`, `250ms`, `EC=L`, `symbolsPerFrame=4`
-- `resilient`: `220 bytes`, `250ms`, `EC=M`, `symbolsPerFrame=2`, `parityBlockDataChunks=4`
+const mount = document.querySelector("#receiver-stage");
+const receiver = createQrReceiver(mount, {
+  onManifest(manifest) {
+    console.log(manifest.fileName, manifest.totalChunks);
+  },
+  onProgress(progress) {
+    console.log(progress.receivedChunks, progress.totalChunks);
+  }
+});
 
-### `estimateTransferStats({ fileSize, chunkByteSize, frameIntervalMs, symbolsPerFrame })`
+const result = await receiver.start();
 
-Returns estimated chunk count, display frames, loop duration, and approximate bytes/sec.
+if (result.kind === "file") {
+  const { anchor } = createDownloadLink(result);
+  document.body.appendChild(anchor);
+  anchor.textContent = `Download ${result.fileName}`;
+} else {
+  if (typeof window.showDirectoryPicker === "function") {
+    const parent = await window.showDirectoryPicker();
+    await saveExtractedArchiveToDirectory(result.extracted, parent);
+  } else {
+    const zipArtifact = await createArchiveZipBlob(result.extracted);
+    const { anchor } = createDownloadLink({
+      blob: zipArtifact.blob,
+      fileName: zipArtifact.fileName
+    });
+    document.body.appendChild(anchor);
+    anchor.textContent = `Download ${zipArtifact.fileName}`;
+  }
+}
+```
 
-### `new AnimatedQrReceiver(options?)`
+`createQrReceiver(target, options?)` mounts an internal `<video>` into the provided container and returns a controller with:
 
-Main methods:
-
-- `startCamera()`
 - `start()`
 - `stop()`
-- `stopCamera()`
-- `ingestFrameText(text)` for testing and custom inputs
+- `reset()`
+- `destroy()`
+- `getState()`
 
-Notable options:
+`start()` is Promise-first and resolves to:
 
-- `scanMaxDimension`: caps the internal processing resolution used for decoding
-- `decoderAssetBaseUrl`: overrides where the receiver looks for `animated-data-qr.decoder.worker.js` and `zxing_reader.wasm`
-- `cameraOptimization`: applies supported camera constraints after `getUserMedia()`
-- `getDiagnostics(sessionId)`: returns duplicate/new frame counts and parity recovery counts for tuning
+- `{ kind: "file", ... }` for normal file payloads
+- `{ kind: "folder", ... }` for folder transfers after automatic archive extraction
 
-### `createArchive(inputs, options?)`
+Receiver callbacks are observational only:
 
-Builds an internal `SARC1` archive from a folder-like file list.
-Use this before `sender.prepare(...)` when the user selected a folder.
+- `onManifest`
+- `onProgress`
+- `onDiagnostics`
+- `onError`
+- `onCameraStart`
+- `onCameraStop`
 
-### `extractArchive(archive, options?)`
+## Presets and Estimates
 
-Validates and extracts a received `SARC1` archive inside the browser.
+Use `resolveTransferPreset(name)` to get a stable preset object:
 
-### `createArchiveZipBlob(extractedArchive)`
+- `compatibility`
+- `balanced`
+- `throughput`
+- `resilient`
 
-Builds a standard ZIP fallback from extracted folder contents.
+Use `estimateTransferStats(...)` to estimate chunk count, frame count, loop duration, and approximate bytes/sec.
 
-### `saveExtractedArchiveToDirectory(extractedArchive, directoryHandle, options?)`
+Current preset intent:
 
-Writes extracted files into a fresh child directory under a user-selected parent directory.
-The helper never writes outside the chosen directory and avoids colliding with an existing folder name by allocating a unique subdirectory.
-
-### `createDownloadLink(result, anchorElement?)`
-
-Creates a download link from a completed receive result.
-
-## Demo UX
-
-The sample app intentionally exposes only a preset selector.
-Chunk size, frame interval, QR density, and parity behavior are derived from the selected preset so that the public demo stays approachable.
-
-Each preset shows supplemental guidance in the UI:
-
-- what kind of environment it fits
-- how aggressively it pushes throughput
-- how much recovery protection it applies
-
-The sender and receiver pages also include a help button that explains the operational flow in the browser.
-
-Current demo flow:
-
-- the sender prepares the transfer automatically when you open the QR stage
-- the sender always renders the larger plain payload layout
-- the sender can choose a single file or a whole folder
-- folder selections are packed into an internal transfer archive before QR encoding
-- the receiver starts camera scanning as soon as you open the scan stage
-- live receive progress stays inside the receiver modal while the main page remains compact
-- when a single file completes, the receiver modal closes automatically and the page highlights a clear download button
-- when a folder completes, the receiver extracts the internal archive in-browser and highlights either a direct folder-save action or a ZIP fallback
+- `compatibility`: default and most forgiving
+- `balanced`: faster when two QR symbols read cleanly on the real devices in use
+- `throughput`: experimental
+- `resilient`: stronger parity recovery for unstable capture conditions
 
 ## Folder Transfer
 
-Folder transfer is intentionally exposed as a browser-friendly workflow instead of asking the user to handle a custom archive manually.
+Folder transfer is part of the public library API.
 
-- sender side: the selected folder is packed into an internal `SARC1` archive
-- transfer phase: QR frames carry only the packed archive bytes
-- receiver side: the browser validates and extracts the archive automatically
-- user output: extracted-folder save on supported browsers, or standard ZIP download everywhere else
+Flow:
 
-Security-oriented checks in the archive pipeline include:
+1. sender receives a folder-like `FileList` or `ArrayLike<File>`
+2. the library packs it into an internal `SARC1` archive
+3. QR transfer carries only the archive bytes
+4. receiver reconstructs the archive
+5. receiver extracts it automatically before resolving `start()`
+6. consumer saves the extracted folder directly or downloads a standard ZIP fallback
 
-- relative-path sanitization with traversal rejection
+Security checks in the archive pipeline include:
+
+- path sanitization with traversal rejection
 - per-file, per-block, and total-size limits
 - block and file SHA-256 verification during extraction
-- unique output subdirectory allocation when writing restored folders
-- standard ZIP fallback generation only after extraction succeeds
+- safe subdirectory creation when restoring to a chosen directory
 
-## Transfer Tuning
+## Demo App
 
-Large files can still take significant time because the transport is strictly optical and one-way.
-The biggest performance levers, in order, are:
+The demo pages are intentionally simpler than the library surface:
 
-1. increase payload per display frame
-2. avoid Base64 inflation by using binary payloads
-3. reduce QR error correction where the environment allows it
-4. show multiple QR symbols per frame
-5. add parity or stronger FEC so missed reads do not require extra loops
+- preset-first UI
+- file or folder selection
+- sender and receiver stages shown in modals
+- receiver auto-closes the scan stage on completion
+- clear save actions for both file and folder results
 
-This library already applies several of these improvements:
-
-- `binary` payload is the default
-- `symbolsPerFrame` supports multi-QR transfer
-- `parityBlockDataChunks` adds XOR parity recovery
-- the sender renders a larger plain QR stage so more of the screen area is used for payload
-- the receiver uses ZXing/WASM with full-frame and tile fallback passes
-- the receiver can optimize supported camera tracks and uses a single in-flight scan loop
-- the sender rotates multi-QR placement across display frames and shifts chunk groupings across loops to avoid persistent blind spots and repeated weak pairings
-- the demo presets package these tradeoffs into simple choices
-
-Because the transport is one-way and loops continuously, transfers naturally slow down near the end: once most chunks are already captured, each successful scan is more likely to be a duplicate than a new chunk. Smaller parity blocks help reduce this tail by reconstructing one missing chunk without waiting for the exact QR to reappear in a later loop.
-
-Current preset guidance:
-
-- `Compatibility`: default and most forgiving, now with short parity blocks to reduce late-stage waiting
-- `Balanced`: faster when two QR symbols read cleanly, with light parity recovery, but still validate on your real devices before making it your default
-- `Throughput`: experimental and best suited to bright screens with newer cameras
-- `Resilient`: stronger parity recovery for unstable capture conditions and long end-of-transfer tails
+The demo imports only the public wrapper API from the built package.
 
 ## Development
 
 ```bash
 npm install
 npx playwright install chromium
+npm run build
 npm test
 npm run test:e2e
-npm run build
 ```
 
-## GitHub Pages Deploy
+## GitHub Pages
 
-The repository includes [`deploy-pages.yml`](./.github/workflows/deploy-pages.yml).
+The repository publishes Pages through `.github/workflows/deploy-pages.yml`.
 
-- pushes to `main` deploy GitHub Pages automatically
-- the workflow builds with Node.js `24`
+- pushes to `main` build the site with Node.js `24`
 - the built site is published to the `gh-pages` branch
-- this avoids the deprecated Pages artifact actions that were emitting Node 20 warnings
+- the generated `site/dist/` directory includes the worker and WASM assets required by the receiver
 
-To build the Pages artifact locally:
+Local Pages build:
 
 ```bash
 npm run build:pages
 node scripts/static-server.mjs --port 4173 --root site
 ```
 
-The generated `site/dist/` directory includes the main bundles plus:
-
-- `animated-data-qr.decoder.worker.js`
-- `zxing_reader.wasm`
-
-## Publishing to npm
+## Publishing
 
 ```bash
 npm run build

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   TRANSFER_PRESETS,
   resolveTransferPreset
-} from "../src/index.js";
+} from "../src/tuning.js";
 
 describe("transfer presets", () => {
   it("defaults to the compatibility preset", () => {

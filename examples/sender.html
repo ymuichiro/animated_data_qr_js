@@ -135,7 +135,7 @@
 
         <div class="canvas-card canvas-card--modal">
           <div class="canvas-frame canvas-frame--modal">
-            <canvas id="qrCanvas"></canvas>
+            <div id="qrStageMount"></div>
           </div>
           <p id="stageMeta" class="canvas-caption">Choose a file, then open the QR stage when you are ready.</p>
         </div>
@@ -168,12 +168,11 @@
     </dialog>
 
     <script type="module">
-      import { AnimatedQrSender, createArchive, resolveTransferPreset, estimateTransferStats } from "../dist/animated-data-qr.esm.js";
+      import { createQrSender, resolveTransferPreset, estimateTransferStats } from "../dist/animated-data-qr.esm.js";
       import { initSenderDemo } from "../docs/assets/demo-ui.js";
 
       initSenderDemo({
-        AnimatedQrSender,
-        createArchive,
+        createQrSender,
         resolveTransferPreset,
         estimateTransferStats
       });

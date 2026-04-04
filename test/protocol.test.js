@@ -6,7 +6,7 @@ import {
   encodeChunkFrameBinary,
   encodeParityFrameBinary,
   parseFrame
-} from "../src/index.js";
+} from "../src/protocol.js";
 
 describe("protocol", () => {
   it("encodes and parses manifest frame", () => {

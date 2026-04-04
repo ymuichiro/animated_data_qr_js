@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  createTransferFrames,
-  AnimatedQrReceiver,
-  estimateTransferStats,
-  parseFrame
-} from "../src/index.js";
+import { createTransferFrames } from "../src/sender.js";
+import { AnimatedQrReceiver } from "../src/receiver.js";
+import { estimateTransferStats } from "../src/tuning.js";
+import { parseFrame } from "../src/protocol.js";
 
 function createFakeFile(name, type, bytes) {
   return {
