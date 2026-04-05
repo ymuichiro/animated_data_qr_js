@@ -139,4 +139,63 @@ describe("AnimatedQrReceiver camera startup", () => {
       }
     }
   });
+
+  it("raises a no-camera error when no video input devices exist", async () => {
+    const firstError = Object.assign(new Error("invalid constraint"), {
+      name: "OverconstrainedError"
+    });
+    const getUserMedia = vi.fn().mockRejectedValue(firstError);
+    const enumerateDevices = vi.fn(async () => []);
+
+    const originalNavigator = globalThis.navigator;
+    const originalWindow = globalThis.window;
+    globalThis.window = { isSecureContext: true };
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        userAgent: "test-agent",
+        mediaDevices: {
+          getUserMedia,
+          enumerateDevices
+        }
+      }
+    });
+
+    try {
+      const receiver = new AnimatedQrReceiver({
+        video: {
+          srcObject: null,
+          setAttribute() {},
+          play: vi.fn(async () => {})
+        }
+      });
+
+      await expect(receiver.startCamera({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" }
+        }
+      })).rejects.toMatchObject({
+        name: "NoCameraDevicesError",
+        message: "No camera device is available on this device."
+      });
+
+      expect(getUserMedia).toHaveBeenCalledTimes(1);
+      expect(enumerateDevices).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalNavigator === undefined) {
+        delete globalThis.navigator;
+      } else {
+        Object.defineProperty(globalThis, "navigator", {
+          configurable: true,
+          value: originalNavigator
+        });
+      }
+      if (originalWindow === undefined) {
+        delete globalThis.window;
+      } else {
+        globalThis.window = originalWindow;
+      }
+    }
+  });
 });

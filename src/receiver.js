@@ -24,7 +24,9 @@ function createCameraStartError(error) {
   const name = error?.name;
   let message = error?.message || String(error);
 
-  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+  if (name === "NoCameraDevicesError") {
+    message = "No camera device is available on this device.";
+  } else if (name === "NotAllowedError" || name === "PermissionDeniedError") {
     message = "Camera permission was denied. Check the browser site settings and allow camera access.";
   } else if (name === "NotReadableError" || name === "TrackStartError") {
     message = "The camera is already in use by another app or browser tab.";
@@ -57,8 +59,26 @@ function logCameraStartFailure(error, details = {}) {
     fallbackConstraints: details.fallbackConstraints ?? null,
     secureContext: details.secureContext ?? null,
     mediaDevicesAvailable: details.mediaDevicesAvailable ?? null,
+    videoInputCount: details.videoInputCount ?? null,
     userAgent: details.userAgent ?? null
   });
+}
+
+async function countVideoInputDevices() {
+  if (
+    typeof navigator === "undefined"
+    || !navigator.mediaDevices
+    || typeof navigator.mediaDevices.enumerateDevices !== "function"
+  ) {
+    return null;
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((device) => device.kind === "videoinput").length;
+  } catch {
+    return null;
+  }
 }
 
 function constrainScanSize(width, height, maxDimension) {
@@ -312,6 +332,20 @@ export class AnimatedQrReceiver extends SimpleEmitter {
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (error) {
+      const videoInputCount = await countVideoInputDevices();
+      if (videoInputCount === 0) {
+        const wrapped = createCameraStartError({ name: "NoCameraDevicesError" });
+        logCameraStartFailure(wrapped, {
+          requestedConstraints: constraints,
+          attemptedFallback: false,
+          secureContext,
+          mediaDevicesAvailable,
+          videoInputCount,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+        });
+        throw wrapped;
+      }
+
       if (!isConstraintLikeError(error)) {
         const wrapped = createCameraStartError(error);
         logCameraStartFailure(wrapped, {
@@ -319,6 +353,7 @@ export class AnimatedQrReceiver extends SimpleEmitter {
           attemptedFallback: false,
           secureContext,
           mediaDevicesAvailable,
+          videoInputCount,
           userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
         });
         throw wrapped;
@@ -331,13 +366,18 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       try {
         stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
       } catch (fallbackError) {
-        const wrapped = createCameraStartError(fallbackError);
+        const fallbackVideoInputCount = await countVideoInputDevices();
+        const cameraMissing = fallbackVideoInputCount === 0;
+        const wrapped = createCameraStartError(
+          cameraMissing ? { name: "NoCameraDevicesError" } : fallbackError
+        );
         logCameraStartFailure(wrapped, {
           requestedConstraints: constraints,
           attemptedFallback: true,
           fallbackConstraints,
           secureContext,
           mediaDevicesAvailable,
+          videoInputCount: fallbackVideoInputCount,
           userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
         });
         throw wrapped;
