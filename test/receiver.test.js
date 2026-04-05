@@ -5,6 +5,7 @@ import {
   resolveDecoderWasmUrl
 } from "../src/decoder-assets.js";
 import { ZxingDecoderController } from "../src/decoder-controller.js";
+import { AnimatedQrReceiver } from "../src/receiver.js";
 
 describe("decoder assets", () => {
   it("derives the asset base from the bundle url", () => {
@@ -64,5 +65,78 @@ describe("ZxingDecoderController", () => {
     expect(warmupDecoder).toHaveBeenCalledWith("https://cdn.example.com/npm/zxing_reader.wasm");
     expect(decodeOnMainThread).toHaveBeenCalledTimes(1);
     expect(result.frameInputs).toHaveLength(1);
+  });
+});
+
+describe("AnimatedQrReceiver camera startup", () => {
+  it("retries with simple constraints when preferred camera constraints are unavailable", async () => {
+    const play = vi.fn(async () => {});
+    const firstError = Object.assign(new Error("unsupported constraints"), {
+      name: "OverconstrainedError"
+    });
+    const stream = {
+      getVideoTracks() {
+        return [];
+      },
+      getTracks() {
+        return [];
+      }
+    };
+    const getUserMedia = vi
+      .fn()
+      .mockRejectedValueOnce(firstError)
+      .mockResolvedValueOnce(stream);
+
+    const originalNavigator = globalThis.navigator;
+    const originalWindow = globalThis.window;
+    globalThis.window = { isSecureContext: true };
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia
+        }
+      }
+    });
+
+    try {
+      const receiver = new AnimatedQrReceiver({
+        video: {
+          srcObject: null,
+          setAttribute() {},
+          play
+        }
+      });
+
+      const startedStream = await receiver.startCamera({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 }
+        }
+      });
+
+      expect(startedStream).toBe(stream);
+      expect(getUserMedia).toHaveBeenCalledTimes(2);
+      expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+        audio: false,
+        video: true
+      });
+      expect(play).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalNavigator === undefined) {
+        delete globalThis.navigator;
+      } else {
+        Object.defineProperty(globalThis, "navigator", {
+          configurable: true,
+          value: originalNavigator
+        });
+      }
+      if (originalWindow === undefined) {
+        delete globalThis.window;
+      } else {
+        globalThis.window = originalWindow;
+      }
+    }
   });
 });

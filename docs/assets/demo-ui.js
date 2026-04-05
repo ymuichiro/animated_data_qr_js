@@ -113,6 +113,21 @@ function formatDecoderMode(mode) {
   return "Decoder: preparing";
 }
 
+function formatCameraErrorDetail(error) {
+  const message = error?.message || String(error);
+  const name = error?.name;
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return `${message} If the browser did not prompt, open the site settings and enable camera permission manually.`;
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return `${message} Close other apps or tabs that may already be using the camera.`;
+  }
+  if (name === "SecurityError") {
+    return `${message} Open the site over HTTPS or localhost.`;
+  }
+  return message;
+}
+
 function setStatus({ tone, title, detail, legacy }) {
   const statusCard = byId("statusCard");
   const statusTitle = byId("statusTitle");
@@ -951,10 +966,10 @@ export function initReceiverDemo({
         setStatus({
           tone: "error",
           title: "Camera access failed",
-          detail: error?.message || String(error),
-          legacy: `error: ${error?.message || String(error)}`
+          detail: formatCameraErrorDetail(error),
+          legacy: `error: ${formatCameraErrorDetail(error)}`
         });
-        setText("stageMeta", "Camera access failed. Adjust permissions and try again.");
+        setText("stageMeta", "Camera access failed. Review the browser permission state, camera availability, and retry.");
         syncButtons(false);
       });
   }

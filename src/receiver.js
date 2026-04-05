@@ -5,6 +5,43 @@ import { buildDecodePasses } from "./decoder-passes.js";
 import { ZxingDecoderController } from "./decoder-controller.js";
 import { optimizeCameraTrack } from "./camera-optimization.js";
 
+function isSecureCameraContext() {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  return window.isSecureContext !== false;
+}
+
+function isConstraintLikeError(error) {
+  const name = error?.name;
+  return name === "OverconstrainedError"
+    || name === "ConstraintNotSatisfiedError"
+    || name === "NotFoundError"
+    || name === "DevicesNotFoundError";
+}
+
+function createCameraStartError(error) {
+  const name = error?.name;
+  let message = error?.message || String(error);
+
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    message = "Camera permission was denied. Check the browser site settings and allow camera access.";
+  } else if (name === "NotReadableError" || name === "TrackStartError") {
+    message = "The camera is already in use by another app or browser tab.";
+  } else if (isConstraintLikeError(error)) {
+    message = "The requested camera settings are not available on this device.";
+  } else if (name === "SecurityError") {
+    message = "Camera access requires a secure context (HTTPS).";
+  }
+
+  const wrapped = new Error(message);
+  wrapped.name = name || "CameraStartError";
+  if (error && !wrapped.cause) {
+    wrapped.cause = error;
+  }
+  return wrapped;
+}
+
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
     return { width, height };
@@ -233,7 +270,29 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       throw new Error("Camera API is not available in this browser");
     }
 
-    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    if (!isSecureCameraContext()) {
+      throw createCameraStartError({ name: "SecurityError" });
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      if (!isConstraintLikeError(error)) {
+        throw createCameraStartError(error);
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true
+        });
+      } catch (fallbackError) {
+        throw createCameraStartError(fallbackError);
+      }
+    }
+
+    this.stream = stream;
     this.video.srcObject = this.stream;
     this.video.setAttribute("playsinline", "true");
     await this.video.play();
