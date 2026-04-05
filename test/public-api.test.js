@@ -93,6 +93,9 @@ vi.mock("../src/receiver.js", () => {
     }
 
     async start() {
+      if (receiverScenario.kind === "start-error") {
+        throw new Error("Camera permission denied");
+      }
       this.scanning = true;
       this.stream = { id: "mock-stream" };
       this.emit("camera-start", { stream: this.stream });
@@ -380,6 +383,15 @@ describe("library-first public API", () => {
     expect(result.kind).toBe("folder");
     expect(result.archiveFileName).toBe("folder.sarc1");
     expect(result.extracted.rootName).toBe("transfer-folder");
+  });
+
+  it("rejects receiver.start() when camera startup fails", async () => {
+    receiverScenario = { kind: "start-error" };
+    const target = createFakeTarget();
+    const receiver = createQrReceiver(target);
+
+    await expect(receiver.start()).rejects.toThrow("Camera permission denied");
+    expect(receiver.getState().status).toBe("error");
   });
 
   it("rejects invalid mount targets", () => {

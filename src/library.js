@@ -435,6 +435,7 @@ export function createQrReceiver(target, options = {}) {
         activeResolve = resolve;
         activeReject = reject;
       });
+      const pendingPromise = activePromise;
 
       try {
         await receiver.start();
@@ -445,7 +446,7 @@ export function createQrReceiver(target, options = {}) {
         settlePending(normalized);
       }
 
-      return activePromise;
+      return pendingPromise;
     },
 
     stop() {
