@@ -154,6 +154,16 @@ function logReceiverError(error, receiver) {
   });
 }
 
+function showNoCameraAlert(error) {
+  if (error?.name !== "NoCameraDevicesError") {
+    return;
+  }
+  if (typeof window === "undefined" || typeof window.alert !== "function") {
+    return;
+  }
+  window.alert("No camera device is available on this device. Open this page on a phone, tablet, or computer with a working camera and try again.");
+}
+
 function setStatus({ tone, title, detail, legacy }) {
   const statusCard = byId("statusCard");
   const statusTitle = byId("statusTitle");
@@ -768,6 +778,7 @@ export function initReceiverDemo({
         return;
       }
       logReceiverError(error, receiver);
+      showNoCameraAlert(error);
       setStatus({
         tone: "error",
         title: "Receiver error",
@@ -991,6 +1002,7 @@ export function initReceiverDemo({
           return;
         }
         logReceiverError(error, receiver);
+        showNoCameraAlert(error);
         setStatus({
           tone: "error",
           title: "Camera access failed",

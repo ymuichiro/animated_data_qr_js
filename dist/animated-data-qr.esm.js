@@ -5686,7 +5686,9 @@ function isConstraintLikeError(error) {
 function createCameraStartError(error) {
   const name = error == null ? void 0 : error.name;
   let message = (error == null ? void 0 : error.message) || String(error);
-  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+  if (name === "NoCameraDevicesError") {
+    message = "No camera device is available on this device.";
+  } else if (name === "NotAllowedError" || name === "PermissionDeniedError") {
     message = "Camera permission was denied. Check the browser site settings and allow camera access.";
   } else if (name === "NotReadableError" || name === "TrackStartError") {
     message = "The camera is already in use by another app or browser tab.";
@@ -5703,7 +5705,7 @@ function createCameraStartError(error) {
   return wrapped;
 }
 function logCameraStartFailure(error, details = {}) {
-  var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k, _l;
+  var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k, _l, _m;
   if (typeof console === "undefined" || typeof console.error !== "function") {
     return;
   }
@@ -5717,8 +5719,20 @@ function logCameraStartFailure(error, details = {}) {
     fallbackConstraints: (_i = details.fallbackConstraints) != null ? _i : null,
     secureContext: (_j = details.secureContext) != null ? _j : null,
     mediaDevicesAvailable: (_k = details.mediaDevicesAvailable) != null ? _k : null,
-    userAgent: (_l = details.userAgent) != null ? _l : null
+    videoInputCount: (_l = details.videoInputCount) != null ? _l : null,
+    userAgent: (_m = details.userAgent) != null ? _m : null
   });
+}
+async function countVideoInputDevices() {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
+    return null;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((device) => device.kind === "videoinput").length;
+  } catch {
+    return null;
+  }
 }
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
@@ -5937,6 +5951,19 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (error) {
+      const videoInputCount = await countVideoInputDevices();
+      if (videoInputCount === 0) {
+        const wrapped = createCameraStartError({ name: "NoCameraDevicesError" });
+        logCameraStartFailure(wrapped, {
+          requestedConstraints: constraints,
+          attemptedFallback: false,
+          secureContext,
+          mediaDevicesAvailable,
+          videoInputCount,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+        });
+        throw wrapped;
+      }
       if (!isConstraintLikeError(error)) {
         const wrapped = createCameraStartError(error);
         logCameraStartFailure(wrapped, {
@@ -5944,6 +5971,7 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
           attemptedFallback: false,
           secureContext,
           mediaDevicesAvailable,
+          videoInputCount,
           userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
         });
         throw wrapped;
@@ -5955,13 +5983,18 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
       try {
         stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
       } catch (fallbackError) {
-        const wrapped = createCameraStartError(fallbackError);
+        const fallbackVideoInputCount = await countVideoInputDevices();
+        const cameraMissing = fallbackVideoInputCount === 0;
+        const wrapped = createCameraStartError(
+          cameraMissing ? { name: "NoCameraDevicesError" } : fallbackError
+        );
         logCameraStartFailure(wrapped, {
           requestedConstraints: constraints,
           attemptedFallback: true,
           fallbackConstraints,
           secureContext,
           mediaDevicesAvailable,
+          videoInputCount: fallbackVideoInputCount,
           userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
         });
         throw wrapped;
