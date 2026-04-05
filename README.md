@@ -3,6 +3,21 @@
 Offline browser-to-browser transfer over animated QR codes.
 The package is published as a JavaScript library first. The GitHub Pages app is only a thin demo built on the same public API.
 
+## What It Does
+
+`animated-data-qr-js` is a browser-side data transfer library.
+
+- sender side:
+  accepts text, bytes, files, or folders
+- transport:
+  splits the payload into animated QR frames and renders them into a DOM container
+- receiver side:
+  scans those QR frames from camera input and reconstructs the original payload
+- output:
+  resolves to either a normal file result or an extracted folder result
+
+No WebRTC, WebSocket, Bluetooth, or server-side relay is required for the transfer itself.
+
 ## Live Demo
 
 - [Demo home](https://ymuichiro.github.io/animated_data_qr_js/)
@@ -50,6 +65,44 @@ import {
 } from "animated-data-qr-js";
 ```
 
+### Quick Start
+
+```html
+<div id="sender-stage"></div>
+<div id="receiver-stage"></div>
+```
+
+```js
+import {
+  createQrSender,
+  createQrReceiver,
+  createDownloadLink,
+  resolveTransferPreset
+} from "animated-data-qr-js";
+
+const preset = resolveTransferPreset("compatibility");
+
+const sender = createQrSender(document.querySelector("#sender-stage"));
+await sender.loadText("hello world", {
+  fileName: "message.txt",
+  chunkByteSize: preset.chunkByteSize,
+  frameIntervalMs: preset.frameIntervalMs,
+  payloadEncoding: preset.payloadEncoding,
+  symbolsPerFrame: preset.symbolsPerFrame,
+  parityBlockDataChunks: preset.parityBlockDataChunks
+});
+await sender.start();
+
+const receiver = createQrReceiver(document.querySelector("#receiver-stage"));
+const result = await receiver.start();
+
+if (result.kind === "file") {
+  const { anchor } = createDownloadLink(result);
+  anchor.textContent = `Download ${result.fileName}`;
+  document.body.appendChild(anchor);
+}
+```
+
 ### Sender
 
 ```js
@@ -85,6 +138,12 @@ await sender.start();
 - `getState()`
 
 `loadFolder()` uses the internal archive pipeline automatically.
+
+Minimal HTML for folder input:
+
+```html
+<input id="folder" type="file" webkitdirectory multiple />
+```
 
 ### Receiver
 
@@ -150,6 +209,27 @@ Receiver callbacks are observational only:
 - `onCameraStart`
 - `onCameraStop`
 
+### UMD / Script Tag
+
+```html
+<div id="sender-stage"></div>
+<script src="https://cdn.jsdelivr.net/npm/animated-data-qr-js@0.1.0/dist/animated-data-qr.umd.min.js"></script>
+<script>
+  const { createQrSender, resolveTransferPreset } = window.AnimatedDataQr;
+  const preset = resolveTransferPreset("compatibility");
+  const sender = createQrSender(document.getElementById("sender-stage"));
+
+  sender.loadText("hello from UMD", {
+    fileName: "message.txt",
+    chunkByteSize: preset.chunkByteSize,
+    frameIntervalMs: preset.frameIntervalMs,
+    payloadEncoding: preset.payloadEncoding,
+    symbolsPerFrame: preset.symbolsPerFrame,
+    parityBlockDataChunks: preset.parityBlockDataChunks
+  }).then(() => sender.start());
+</script>
+```
+
 ## Presets and Estimates
 
 Use `resolveTransferPreset(name)` to get a stable preset object:
@@ -199,6 +279,7 @@ The demo pages are intentionally simpler than the library surface:
 - clear save actions for both file and folder results
 
 The demo imports only the public wrapper API from the built package.
+This is intentional: the demo is the validation target for the published SDK surface, not a separate implementation.
 
 ## Development
 
