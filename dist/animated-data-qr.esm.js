@@ -5702,6 +5702,24 @@ function createCameraStartError(error) {
   }
   return wrapped;
 }
+function logCameraStartFailure(error, details = {}) {
+  var _a2, _b2, _c, _d, _e2, _f, _g, _h, _i, _j, _k, _l;
+  if (typeof console === "undefined" || typeof console.error !== "function") {
+    return;
+  }
+  console.error("[animated-data-qr] Camera startup failed", {
+    name: (_a2 = error == null ? void 0 : error.name) != null ? _a2 : null,
+    message: (_b2 = error == null ? void 0 : error.message) != null ? _b2 : String(error),
+    causeName: (_d = (_c = error == null ? void 0 : error.cause) == null ? void 0 : _c.name) != null ? _d : null,
+    causeMessage: (_f = (_e2 = error == null ? void 0 : error.cause) == null ? void 0 : _e2.message) != null ? _f : null,
+    requestedConstraints: (_g = details.requestedConstraints) != null ? _g : null,
+    attemptedFallback: (_h = details.attemptedFallback) != null ? _h : false,
+    fallbackConstraints: (_i = details.fallbackConstraints) != null ? _i : null,
+    secureContext: (_j = details.secureContext) != null ? _j : null,
+    mediaDevicesAvailable: (_k = details.mediaDevicesAvailable) != null ? _k : null,
+    userAgent: (_l = details.userAgent) != null ? _l : null
+  });
+}
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
     return { width, height };
@@ -5900,23 +5918,53 @@ var AnimatedQrReceiver = class extends SimpleEmitter {
     if (typeof navigator === "undefined" || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
       throw new Error("Camera API is not available in this browser");
     }
-    if (!isSecureCameraContext()) {
-      throw createCameraStartError({ name: "SecurityError" });
+    const secureContext = isSecureCameraContext();
+    const mediaDevicesAvailable = Boolean(
+      typeof navigator !== "undefined" && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function"
+    );
+    if (!secureContext) {
+      const error = createCameraStartError({ name: "SecurityError" });
+      logCameraStartFailure(error, {
+        requestedConstraints: constraints,
+        attemptedFallback: false,
+        secureContext,
+        mediaDevicesAvailable,
+        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+      });
+      throw error;
     }
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (error) {
       if (!isConstraintLikeError(error)) {
-        throw createCameraStartError(error);
-      }
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: true
+        const wrapped = createCameraStartError(error);
+        logCameraStartFailure(wrapped, {
+          requestedConstraints: constraints,
+          attemptedFallback: false,
+          secureContext,
+          mediaDevicesAvailable,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
         });
+        throw wrapped;
+      }
+      const fallbackConstraints = {
+        audio: false,
+        video: true
+      };
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
       } catch (fallbackError) {
-        throw createCameraStartError(fallbackError);
+        const wrapped = createCameraStartError(fallbackError);
+        logCameraStartFailure(wrapped, {
+          requestedConstraints: constraints,
+          attemptedFallback: true,
+          fallbackConstraints,
+          secureContext,
+          mediaDevicesAvailable,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+        });
+        throw wrapped;
       }
     }
     this.stream = stream;
