@@ -8221,6 +8221,7 @@ function createQrReceiver(target, options = {}) {
         activeResolve = resolve;
         activeReject = reject;
       });
+      const pendingPromise = activePromise;
       try {
         await receiver.start();
       } catch (error) {
@@ -8229,7 +8230,7 @@ function createQrReceiver(target, options = {}) {
         state.status = "error";
         settlePending(normalized);
       }
-      return activePromise;
+      return pendingPromise;
     },
     stop() {
       assertActive();
