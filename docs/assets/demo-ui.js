@@ -128,6 +128,32 @@ function formatCameraErrorDetail(error) {
   return message;
 }
 
+function logReceiverError(error, receiver) {
+  if (typeof console === "undefined" || typeof console.error !== "function") {
+    return;
+  }
+
+  const state = typeof receiver?.getState === "function" ? receiver.getState() : null;
+  console.error("[animated-data-qr demo] Receiver error", {
+    name: error?.name ?? null,
+    message: error?.message ?? String(error),
+    causeName: error?.cause?.name ?? null,
+    causeMessage: error?.cause?.message ?? null,
+    decoderMode: state?.decoderMode ?? null,
+    camera: state?.camera ?? null,
+    status: state?.status ?? null,
+    scanning: state?.scanning ?? null,
+    secureContext: typeof window !== "undefined" ? window.isSecureContext : null,
+    mediaDevicesAvailable: typeof navigator !== "undefined"
+      ? Boolean(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function")
+      : null,
+    permissionsApiAvailable: typeof navigator !== "undefined"
+      ? typeof navigator.permissions?.query === "function"
+      : null,
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+  });
+}
+
 function setStatus({ tone, title, detail, legacy }) {
   const statusCard = byId("statusCard");
   const statusTitle = byId("statusTitle");
@@ -741,6 +767,7 @@ export function initReceiverDemo({
       if (error?.name === "AbortError") {
         return;
       }
+      logReceiverError(error, receiver);
       setStatus({
         tone: "error",
         title: "Receiver error",
@@ -963,6 +990,7 @@ export function initReceiverDemo({
         if (runId !== activeRunId || error?.name === "AbortError") {
           return;
         }
+        logReceiverError(error, receiver);
         setStatus({
           tone: "error",
           title: "Camera access failed",

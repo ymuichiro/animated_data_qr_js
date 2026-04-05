@@ -42,6 +42,25 @@ function createCameraStartError(error) {
   return wrapped;
 }
 
+function logCameraStartFailure(error, details = {}) {
+  if (typeof console === "undefined" || typeof console.error !== "function") {
+    return;
+  }
+
+  console.error("[animated-data-qr] Camera startup failed", {
+    name: error?.name ?? null,
+    message: error?.message ?? String(error),
+    causeName: error?.cause?.name ?? null,
+    causeMessage: error?.cause?.message ?? null,
+    requestedConstraints: details.requestedConstraints ?? null,
+    attemptedFallback: details.attemptedFallback ?? false,
+    fallbackConstraints: details.fallbackConstraints ?? null,
+    secureContext: details.secureContext ?? null,
+    mediaDevicesAvailable: details.mediaDevicesAvailable ?? null,
+    userAgent: details.userAgent ?? null
+  });
+}
+
 function constrainScanSize(width, height, maxDimension) {
   if (!Number.isInteger(maxDimension) || maxDimension <= 0) {
     return { width, height };
@@ -270,8 +289,23 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       throw new Error("Camera API is not available in this browser");
     }
 
-    if (!isSecureCameraContext()) {
-      throw createCameraStartError({ name: "SecurityError" });
+    const secureContext = isSecureCameraContext();
+    const mediaDevicesAvailable = Boolean(
+      typeof navigator !== "undefined"
+      && navigator.mediaDevices
+      && typeof navigator.mediaDevices.getUserMedia === "function"
+    );
+
+    if (!secureContext) {
+      const error = createCameraStartError({ name: "SecurityError" });
+      logCameraStartFailure(error, {
+        requestedConstraints: constraints,
+        attemptedFallback: false,
+        secureContext,
+        mediaDevicesAvailable,
+        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+      });
+      throw error;
     }
 
     let stream;
@@ -279,16 +313,34 @@ export class AnimatedQrReceiver extends SimpleEmitter {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (error) {
       if (!isConstraintLikeError(error)) {
-        throw createCameraStartError(error);
+        const wrapped = createCameraStartError(error);
+        logCameraStartFailure(wrapped, {
+          requestedConstraints: constraints,
+          attemptedFallback: false,
+          secureContext,
+          mediaDevicesAvailable,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+        });
+        throw wrapped;
       }
 
+      const fallbackConstraints = {
+        audio: false,
+        video: true
+      };
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: true
-        });
+        stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
       } catch (fallbackError) {
-        throw createCameraStartError(fallbackError);
+        const wrapped = createCameraStartError(fallbackError);
+        logCameraStartFailure(wrapped, {
+          requestedConstraints: constraints,
+          attemptedFallback: true,
+          fallbackConstraints,
+          secureContext,
+          mediaDevicesAvailable,
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null
+        });
+        throw wrapped;
       }
     }
 
